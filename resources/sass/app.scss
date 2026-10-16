@@ -1,0 +1,9 @@
+// Variables
+// Add any custom Bootstrap variable overrides here
+$primary: #0d6efd; // Or whatever primary color was used in Tailwind
+
+// Import Bootstrap Icons
+@import 'bootstrap-icons/font/bootstrap-icons.css';
+
+// Import Bootstrap
+@import 'bootstrap/scss/bootstrap';
