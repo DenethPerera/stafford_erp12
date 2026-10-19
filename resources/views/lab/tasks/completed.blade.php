@@ -596,14 +596,30 @@
                                         </div>
 
                                         <!-- When file is uploaded -->
-                                        <div x-show="test.testReportFile" class="d-flex align-items-center justify-content-between p-2 rounded-3 bg-light border border-success border-opacity-25">
-                                            <div class="d-flex align-items-center gap-2 overflow-hidden">
-                                                <i class="bi bi-file-earmark-check-fill text-success fs-5"></i>
-                                                <a :href="test.testReportFileUrl || ('/storage/' + test.testReportFile)" target="_blank" class="fw-bold small text-dark text-truncate text-decoration-none" style="max-width: 140px;" x-text="test.testReportFileName || 'Uploaded Report File'"></a>
+                                        <div x-show="test.testReportFile" class="d-flex flex-column gap-2">
+                                            <div class="d-flex align-items-center justify-content-between p-2 rounded-3 bg-light border border-success border-opacity-25">
+                                                <div class="d-flex align-items-center gap-2 overflow-hidden">
+                                                    <i class="bi bi-file-earmark-check-fill text-success fs-5"></i>
+                                                    <a :href="test.testReportFileUrl || ('/storage/' + test.testReportFile)" target="_blank" class="fw-bold small text-dark text-truncate text-decoration-none" style="max-width: 140px;" x-text="test.testReportFileName || 'Uploaded Report File'"></a>
+                                                </div>
+                                                <button type="button" x-show="!isReadOnly" @click="removeTestFile(index)" class="btn btn-sm btn-link text-danger p-0 border-0 ms-2 text-decoration-none" title="Remove attachment">
+                                                    <i class="bi bi-trash3-fill"></i>
+                                                </button>
                                             </div>
-                                            <button type="button" x-show="!isReadOnly" @click="removeTestFile(index)" class="btn btn-sm btn-link text-danger p-0 border-0 ms-2 text-decoration-none" title="Remove attachment">
-                                                <i class="bi bi-trash3-fill"></i>
-                                            </button>
+                                            <!-- Replace file option in edit mode -->
+                                            <div x-show="!isReadOnly" class="position-relative">
+                                                <label class="text-muted" style="font-size: 10px; cursor:pointer;">
+                                                    <i class="bi bi-arrow-repeat text-primary me-1"></i>
+                                                    <span>Replace file: </span>
+                                                    <input type="file"
+                                                           class="d-none"
+                                                           accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.xls,.xlsx"
+                                                           :disabled="isReadOnly || test.isUploadingFile"
+                                                           @change="uploadTestFile($event, index)">
+                                                    <span class="text-primary fw-semibold text-decoration-underline" style="cursor:pointer;">Browse</span>
+                                                </label>
+                                                <span x-show="test.isUploadingFile" class="spinner-border spinner-border-sm text-primary ms-2" role="status"></span>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -852,9 +868,14 @@
                 const rawTests = JSON.parse(JSON.stringify(task.tests || []));
                 rawTests.forEach(t => {
                     t.isUploadingFile = false;
+                    // Ensure labName & labType are always present (required by server validation)
+                    t.labName = t.labName || 'Testing Laboratory';
+                    t.labType = t.labType || 'CPSC-Accepted';
                     t.testReportFile = t.testReportFile || '';
                     t.testReportFileName = t.testReportFileName || (t.testReportFile ? t.testReportFile.split('/').pop() : '');
                     t.testReportFileUrl = t.testReportFileUrl || (t.testReportFile ? ('/storage/' + t.testReportFile) : '');
+                    // Ensure citations is always an array
+                    if (!Array.isArray(t.citations)) t.citations = [];
                 });
 
                 this.form = {
