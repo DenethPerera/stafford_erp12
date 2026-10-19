@@ -137,8 +137,10 @@ class StaffordQualificationController extends Controller
                     continue;
                 }
 
-                // Guard: If synced to CPSC/ERP, skip locked record
-                if ($existing->api_sync_status === 'synced') {
+                $isAdmin = auth()->check() && (auth()->user()->isAdmin() || auth()->user()->hasRole('super_admin'));
+
+                // Guard: If synced to CPSC/ERP, skip locked record unless user is admin
+                if ($existing->api_sync_status === 'synced' && !$isAdmin) {
                     if (!$primaryResult) $primaryResult = $existing;
                     continue;
                 }
@@ -211,7 +213,9 @@ class StaffordQualificationController extends Controller
             ], 403);
         }
 
-        if ($staffordQualification->api_sync_status === 'synced') {
+        $isAdmin = auth()->check() && (auth()->user()->isAdmin() || auth()->user()->hasRole('super_admin'));
+
+        if ($staffordQualification->api_sync_status === 'synced' && !$isAdmin) {
             return response()->json([
                 'success' => false,
                 'message' => 'This record has already been synced to CPSC/ERP. Edits are locked.'
@@ -224,6 +228,29 @@ class StaffordQualificationController extends Controller
 
         $staffordQualification->update($data);
         $staffordQualification->load('lab');
+
+        // Also update shared product/testing details across other POs in the same collection
+        $groupQuery = StaffordQualification::where('factory_name', $staffordQualification->factory_name)
+            ->where('style_no', $staffordQualification->style_no)
+            ->where('id', '!=', $staffordQualification->id);
+
+        if (!empty($staffordQualification->season)) {
+            $groupQuery->where('season', $staffordQualification->season);
+        } else {
+            $groupQuery->where(function ($q) {
+                $q->whereNull('season')->orWhere('season', '');
+            });
+        }
+
+        if (!$isAdmin) {
+            $groupQuery->where('api_sync_status', '!=', 'synced');
+        }
+
+        $sharedData = collect($data)->except(['po_number', 'cert_no', 'lot_number'])->all();
+        foreach ($groupQuery->get() as $otherRecord) {
+            $otherData = $this->preserveExistingData($sharedData, $otherRecord);
+            $otherRecord->update($otherData);
+        }
 
         return response()->json([
             'success' => true,

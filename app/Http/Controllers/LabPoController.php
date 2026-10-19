@@ -319,6 +319,24 @@ class LabPoController extends Controller
             $request->merge(['factoryAddress' => $qualification->factory_address]);
         }
 
+        // Normalise tests array: strip client-only flags and ensure required fields are present
+        $tests = $request->input('tests', []);
+        if (is_array($tests)) {
+            $tests = array_map(function (array $test) {
+                // Remove non-serialisable client-side flags
+                unset($test['isUploadingFile']);
+                // Fill in required server-side fields with safe defaults if missing
+                $test['labName'] = !empty($test['labName']) ? $test['labName'] : 'Testing Laboratory';
+                $test['labType'] = !empty($test['labType']) ? $test['labType'] : 'CPSC-Accepted';
+                // Ensure citations is always an array
+                if (!isset($test['citations']) || !is_array($test['citations'])) {
+                    $test['citations'] = [];
+                }
+                return $test;
+            }, $tests);
+            $request->merge(['tests' => $tests]);
+        }
+
         // Delegate to StaffordQualificationController update logic
         $staffordController = app(StaffordQualificationController::class);
         return $staffordController->update($request, $id);
