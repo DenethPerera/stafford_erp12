@@ -21,10 +21,12 @@
             <button type="button" class="btn btn-outline-secondary rounded-pill px-3" onclick="window.print()">
                 <i class="bi bi-printer me-1"></i> Print PO
             </button>
+            @if(auth()->user()?->isFactory())
             <a href="{{ route('factory-portal.show', ['id' => $po->prodorder_id, 'branch_id' => $po->mbranchlist_id]) }}" 
                class="btn btn-outline-primary rounded-pill px-3">
                 <i class="bi bi-box-seam me-1"></i> View Production Order
             </a>
+            @endif
         </div>
     </div>
 
@@ -49,7 +51,7 @@
             </div>
         </div>
 
-        <!-- Parties Section (Factory / Issuer & Supplier) -->
+        <!-- Parties Section (Factory & Supplier) -->
         <div class="row g-4 mb-4">
             <!-- Factory -->
             <div class="col-md-6">
@@ -67,7 +69,7 @@
             <div class="col-md-6">
                 <div class="p-3 rounded-4 bg-light h-100 border border-light">
                     <div class="text-uppercase fw-bold text-muted small mb-2">
-                        <i class="bi bi-truck me-1 text-success"></i> Supplier / Vendor:
+                        <i class="bi bi-truck me-1 text-success"></i> Supplier:
                     </div>
                     <h5 class="fw-bold text-dark mb-1">{{ $po->supplier?->supname ?? 'Supplier ' . $po->supplierno }}</h5>
                     <div class="small text-muted font-monospace mb-1">Reg Code: {{ $po->supplier?->supregcode }}</div>
@@ -102,7 +104,7 @@
                 <div class="fw-bold font-monospace text-dark">{{ number_format($po->base_total_qty ?: $po->total_qty) }} pcs</div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="text-muted small">Wastage / Scrap Buffer</div>
+                <div class="text-muted small">Wastage Buffer</div>
                 <div class="fw-bold text-primary">
                     @if($po->wastage_percentage > 0)
                         <span class="badge bg-primary-subtle text-primary font-monospace">+{{ number_format($po->wastage_percentage, 1) }}% Allowance</span>
@@ -116,8 +118,8 @@
                 <div class="fw-bold text-dark">{{ $po->payment_terms ?: 'Net 30' }}</div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="text-muted small">Currency / FOB</div>
-                <div class="fw-bold text-dark">{{ $po->currency ?: 'USD' }} / {{ $po->fob_code ?: 'FOB' }}</div>
+                <div class="text-muted small">Currency </div>
+                <div class="fw-bold text-dark">{{ $po->currency ?: 'USD' }}</div>
             </div>
         </div>
 
@@ -209,14 +211,9 @@
         <div class="row pt-5 mt-4 border-top g-4">
             <div class="col-6 col-md-4 text-center">
                 <div class="border-bottom pb-4 mb-2"></div>
-                <div class="small fw-bold text-dark">Authorized Factory Signature</div>
+                <div class="small fw-bold text-dark">Factory Signature</div>
                 <div class="small text-muted">{{ $po->branch?->br_name }}</div>
-            </div>
-            <div class="col-6 col-md-4 text-center">
-                <div class="border-bottom pb-4 mb-2"></div>
-                <div class="small fw-bold text-dark">Stafford ERP System Validation</div>
-                <div class="small text-muted">Auto-Recorded & Verified</div>
-            </div>
+</div>
             <div class="col-12 col-md-4 text-center">
                 <div class="border-bottom pb-4 mb-2"></div>
                 <div class="small fw-bold text-dark">Supplier Acceptance</div>

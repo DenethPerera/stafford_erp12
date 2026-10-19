@@ -5,13 +5,6 @@
 @section('content')
 <div class="d-flex flex-column gap-4">
 
-    <!-- Flash message -->
-    @if(session('success'))
-        <div class="alert alert-success alert-dismissible fade show rounded-4 border-0 shadow-sm" role="alert">
-            <i class="bi bi-check-circle-fill me-2"></i> {{ session('success') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    @endif
 
     <!-- Top Action Banner -->
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden text-white" 
@@ -41,7 +34,7 @@
                 </div>
                 <div class="col-md-3">
                     <select name="branch_id" class="form-select bg-light rounded-pill">
-                        <option value="">All Factories / Branches</option>
+                        <option value="">All Factories</option>
                         @foreach($branches as $b)
                             <option value="{{ $b->id }}" {{ $branchId == $b->id ? 'selected' : '' }}>
                                 {{ $b->br_name }} ({{ $b->br_code }})

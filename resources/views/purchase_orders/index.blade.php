@@ -5,13 +5,6 @@
 @section('content')
 <div class="d-flex flex-column gap-4">
 
-    <!-- Flash message -->
-    @if(session('success'))
-        <div class="alert alert-success alert-dismissible fade show rounded-4 border-0 shadow-sm" role="alert">
-            <i class="bi bi-check-circle-fill me-2"></i> {{ session('success') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    @endif
 
     <!-- Header Banner -->
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden text-white" 
@@ -41,7 +34,7 @@
                             <i class="bi bi-search"></i>
                         </span>
                         <input type="text" name="search" class="form-control bg-light border-start-0 rounded-end-pill" 
-                               placeholder="Search by PO number, order ref, supplier, or factory..." value="{{ $search }}">
+                               placeholder="{{ (auth()->user()?->isFactory() && !auth()->user()?->isAdmin()) ? 'Search by PO number, order ref, or supplier...' : 'Search by PO number, order ref, supplier, or factory...' }}" value="{{ $search }}">
                     </div>
                 </div>
                 <div class="col-md-3">
@@ -75,7 +68,9 @@
                     <tr>
                         <th class="ps-4 text-uppercase text-muted small fw-bold">PO Number</th>
                         <th class="text-uppercase text-muted small fw-bold">Order Ref</th>
-                        <th class="text-uppercase text-muted small fw-bold">Factory</th>
+                        @if(auth()->user()?->isAdmin() || !auth()->user()?->isFactory())
+                            <th class="text-uppercase text-muted small fw-bold">Factory</th>
+                        @endif
                         <th class="text-uppercase text-muted small fw-bold">Supplier</th>
                         <th class="text-uppercase text-muted small fw-bold">Order Date</th>
                         <th class="text-end text-uppercase text-muted small fw-bold">Total Pcs</th>
@@ -97,9 +92,11 @@
                                     {{ $po->prodOrder?->prodorder_ref ?? 'Order #' . $po->prodorder_id }}
                                 </span>
                             </td>
-                            <td>
-                                <div class="fw-semibold text-dark">{{ $po->branch?->br_name ?? 'Branch ' . $po->mbranchlist_id }}</div>
-                            </td>
+                            @if(auth()->user()?->isAdmin() || !auth()->user()?->isFactory())
+                                <td>
+                                    <div class="fw-semibold text-dark">{{ $po->branch?->br_name ?? 'Branch ' . $po->mbranchlist_id }}</div>
+                                </td>
+                            @endif
                             <td>
                                 <div class="fw-bold text-dark">{{ $po->supplier?->supname ?? 'Supplier #' . $po->supplierno }}</div>
                                 <div class="small text-muted font-monospace">{{ $po->supplier?->supregcode }}</div>
@@ -126,7 +123,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="text-center py-5 text-muted">
+                            <td colspan="{{ (auth()->user()?->isAdmin() || !auth()->user()?->isFactory()) ? 9 : 8 }}" class="text-center py-5 text-muted">
                                 <i class="bi bi-file-earmark-x fs-1 d-block mb-2 text-secondary"></i>
                                 No purchase orders created yet.
                             </td>

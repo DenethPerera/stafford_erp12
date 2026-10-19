@@ -8,24 +8,6 @@
 @endphp
 <div class="d-flex flex-column gap-4" x-data="orderDetailApp()">
 
-    <!-- Flash message -->
-    @if(session('success'))
-        <div class="alert alert-success alert-dismissible fade show rounded-4 border-0 shadow-sm" role="alert">
-            <i class="bi bi-check-circle-fill me-2"></i> {{ session('success') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    @endif
-
-    @if($errors->any())
-        <div class="alert alert-danger alert-dismissible fade show rounded-4 border-0 shadow-sm" role="alert">
-            <ul class="mb-0">
-                @foreach ($errors->all() as $error)
-                    <li><i class="bi bi-exclamation-triangle-fill me-1"></i> {{ $error }}</li>
-                @endforeach
-            </ul>
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    @endif
 
     <!-- Top Action Bar -->
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden bg-white">
@@ -54,10 +36,16 @@
 
             <!-- Action Buttons -->
             <div class="d-flex gap-2 flex-wrap">
-                <button type="button" class="btn btn-teal text-white rounded-pill px-4 fw-bold shadow-sm" 
-                        style="background-color: #00A39A;" data-bs-toggle="modal" data-bs-target="#poModal">
-                    <i class="bi bi-file-earmark-plus me-1"></i> Create Purchase Order
-                </button>
+                @if(auth()->user()?->isFactory() && !auth()->user()?->isAdmin())
+                    <button type="button" class="btn btn-teal text-white rounded-pill px-4 fw-bold shadow-sm" 
+                            style="background-color: #00A39A;" data-bs-toggle="modal" data-bs-target="#poModal">
+                        <i class="bi bi-file-earmark-plus me-1"></i> Create Purchase Order
+                    </button>
+                @else
+                    <span class="badge bg-light text-muted border rounded-pill px-3 py-2 small d-flex align-items-center">
+                        <i class="bi bi-eye me-1"></i> Read Only (Admin View)
+                    </span>
+                @endif
             </div>
         </div>
     </div>
@@ -109,13 +97,13 @@
                     <h3 class="fw-bolder text-teal mb-0 font-monospace" style="color: #00A39A;">
                         {{ $orderStats['suppliers_count'] }}
                     </h3>
-                    <div class="text-muted small mt-1">Linked via Style Cost Sheets</div>
+                  
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Generated Purchase Orders Section (if any created) -->
+    <!-- Generated Purchase Orders Section -->
     @if($purchaseOrders->count() > 0)
         <div class="card border-0 shadow-sm rounded-4 overflow-hidden bg-white">
             <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
@@ -124,10 +112,12 @@
                     <h5 class="fw-bold text-dark mb-0">Generated Purchase Orders</h5>
                     <span class="badge bg-success-subtle text-success rounded-pill px-3">{{ $purchaseOrders->count() }} Issued</span>
                 </div>
-                <button type="button" class="btn btn-sm btn-teal text-white rounded-pill px-3 fw-bold" 
-                        style="background-color: #00A39A;" data-bs-toggle="modal" data-bs-target="#poModal">
-                    <i class="bi bi-plus-circle me-1"></i> Create Another PO
-                </button>
+                @if(auth()->user()?->isFactory() && !auth()->user()?->isAdmin())
+                    <button type="button" class="btn btn-sm btn-teal text-white rounded-pill px-3 fw-bold" 
+                            style="background-color: #00A39A;" data-bs-toggle="modal" data-bs-target="#poModal">
+                        <i class="bi bi-plus-circle me-1"></i> Create Another PO
+                    </button>
+                @endif
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
@@ -207,7 +197,7 @@
                         <th class="text-uppercase text-muted small fw-bold">Style No</th>
                         <th class="text-uppercase text-muted small fw-bold">Color Code / Description</th>
                         <th class="text-uppercase text-muted small fw-bold">Size</th>
-                        <th class="text-uppercase text-muted small fw-bold">Suppliers (Cost Sheet)</th>
+                        <th class="text-uppercase text-muted small fw-bold">Suppliers</th>
                         <th class="text-end text-uppercase text-muted small fw-bold">Allocated Qty</th>
                         <th class="text-end text-uppercase text-muted small fw-bold">PO Status</th>
                         <th class="text-end text-uppercase text-muted small fw-bold">Unit Price ($)</th>
@@ -289,6 +279,7 @@
 
 
 
+    @if(auth()->user()?->isFactory() && !auth()->user()?->isAdmin())
     <!-- Modal: Create Purchase Order -->
     <div class="modal fade" id="poModal" tabindex="-1" aria-labelledby="poModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -311,7 +302,7 @@
                             </div>
 
                             <div class="col-md-6">
-                                <label class="form-label fw-semibold">Select Supplier (from Style Costing) <span class="text-danger">*</span></label>
+                                <label class="form-label fw-semibold">Select Supplier <span class="text-danger">*</span></label>
                                 @if($suppliersList->count() > 0)
                                     <select name="supplierno" id="po_supplier_select" class="form-select rounded-3" onchange="filterPoItemsBySupplier(this.value)" required>
                                         <option value="">-- Choose Supplier to Filter Items --</option>
@@ -324,9 +315,7 @@
                                             </option>
                                         @endforeach
                                     </select>
-                                    <div class="form-text small" style="color: #00A39A;">
-                                        <i class="bi bi-funnel me-1"></i> Selecting a supplier automatically filters line items below for that vendor.
-                                    </div>
+                                   
                                 @else
                                     <div class="alert alert-warning p-2 small mb-0 rounded-3">
                                         <i class="bi bi-exclamation-triangle-fill me-1"></i> No suppliers found in style cost sheets (<code>prodstyle_cost</code>) for this order's styles.
@@ -395,7 +384,10 @@
                             <table class="table table-sm align-middle mb-0" id="po_items_table">
                                 <thead class="table-light">
                                     <tr>
-                                        <th class="ps-3 small fw-bold">Pack No</th>
+                                        <th class="ps-3 text-center" style="width: 45px;">
+                                            <input type="checkbox" id="master_item_checkbox" class="form-check-input" onchange="toggleSelectAllItems(this.checked)" title="Select / Deselect All Items" disabled>
+                                        </th>
+                                        <th class="small fw-bold">Pack No</th>
                                         <th class="small fw-bold">Style</th>
                                         <th class="small fw-bold">Color / Size</th>
                                         <th class="small fw-bold text-end" style="width: 85px;">Rem. Qty</th>
@@ -408,13 +400,13 @@
                                 </thead>
                                 <tbody>
                                     <tr id="no_supplier_row">
-                                        <td colspan="9" class="text-center py-4 text-muted">
+                                        <td colspan="10" class="text-center py-4 text-muted">
                                             <i class="bi bi-funnel fs-3 d-block mb-1" style="color: #00A39A;"></i>
                                             Please select a supplier from the dropdown above to filter production order items.
                                         </td>
                                     </tr>
                                     <tr id="no_matching_items_row" class="d-none">
-                                        <td colspan="9" class="text-center py-4 text-warning">
+                                        <td colspan="10" class="text-center py-4 text-warning">
                                             <i class="bi bi-exclamation-triangle fs-3 d-block mb-1"></i>
                                             No line items available for this supplier or all items have already been ordered.
                                         </td>
@@ -422,11 +414,12 @@
                                     @foreach($enrichedLineItems as $idx => $item)
                                         @php
                                             $allocQty = (int) ($item->prod_qty ?: 0);
-                                            $remQty = (int) $item->remaining_qty;
+                                            $remQty = max(0, (int) $item->remaining_qty);
                                             $unitPrice = (float) ($item->vendor_unit_price ?: 0);
-                                            $baseQty = $remQty > 0 ? $remQty : $allocQty;
+                                            $baseQty = $remQty; // Strictly use remaining quantity (0 if already fully ordered)
+                                            $isFulfilled = ($allocQty > 0 && $remQty === 0);
                                         @endphp
-                                        <tr class="po-item-row d-none" 
+                                        <tr class="po-item-row d-none {{ $isFulfilled ? 'table-light opacity-75' : '' }}" 
                                             data-index="{{ $idx }}" 
                                             data-pack-no="{{ $item->pack_no }}"
                                             data-style-no="{{ $item->item_styleno }}"
@@ -435,8 +428,19 @@
                                             data-orig-qty="{{ $allocQty }}"
                                             data-ordered-qty="{{ $item->ordered_qty }}"
                                             data-rem-qty="{{ $remQty }}">
-                                            <td class="ps-3 font-monospace small">
+                                            <td class="ps-3 text-center">
+                                                <input type="checkbox" class="form-check-input item-select-checkbox" 
+                                                       onchange="onRowSelectionChange(this)" 
+                                                       {{ $isFulfilled ? 'disabled' : 'checked' }} 
+                                                       title="{{ $isFulfilled ? 'Already fulfilled' : 'Include in this PO' }}">
+                                            </td>
+                                            <td class="font-monospace small">
                                                 <div class="fw-bold">{{ $item->pack_no }}</div>
+                                                @if($isFulfilled)
+                                                    <span class="badge bg-success-subtle text-success border border-success-subtle px-1 py-0.5 rounded-pill" style="font-size: 9px;">
+                                                        <i class="bi bi-check2"></i>
+                                                    </span>
+                                                @endif
                                                 <input type="hidden" name="items[{{ $idx }}][pack_no]" value="{{ $item->pack_no }}" class="item-pack-input" disabled>
                                                 <input type="hidden" name="items[{{ $idx }}][base_quantity]" class="item-base-qty" value="{{ $baseQty }}" disabled>
                                             </td>
@@ -448,7 +452,7 @@
                                                 <div class="text-muted" style="font-size: 11px;">{{ $item->tbl_style_size_desc ?: '-' }}</div>
                                             </td>
                                             <td class="text-end font-monospace small">
-                                                <div class="fw-bold text-dark">{{ number_format($remQty) }}</div>
+                                                <div class="fw-bold {{ $remQty == 0 ? 'text-success' : 'text-dark' }}">{{ number_format($remQty) }}</div>
                                                 @if($item->ordered_qty > 0)
                                                     <div class="text-muted" style="font-size: 10px;">{{ number_format($item->ordered_qty) }} in PO</div>
                                                 @endif
@@ -458,7 +462,7 @@
                                                     <input type="number" step="0.5" min="0" max="100" 
                                                            name="items[{{ $idx }}][wastage_percentage]" 
                                                            class="form-control form-control-sm text-end font-monospace p-1 item-wastage-pct" 
-                                                           value="10" oninput="onRowWastageChange(this)" disabled>
+                                                           value="{{ $isFulfilled ? 0 : 10 }}" oninput="onRowWastageChange(this)" disabled>
                                                     <span class="input-group-text p-1 text-muted small">%</span>
                                                 </div>
                                             </td>
@@ -483,7 +487,7 @@
                                 </tbody>
                                 <tfoot class="table-light">
                                     <tr>
-                                        <th colspan="3" class="ps-3 fw-bold small">Filtered Totals:</th>
+                                        <th colspan="4" class="ps-3 fw-bold small">Filtered Totals:</th>
                                         <th class="text-end font-monospace small text-muted" id="footer_base_total">0</th>
                                         <th class="text-center font-monospace small text-muted" id="footer_avg_pct">10.0%</th>
                                         <th class="text-end font-monospace small text-primary fw-bold" id="footer_buffer_total">+0</th>
@@ -512,6 +516,7 @@
             </div>
         </div>
     </div>
+    @endif
 
 </div>
 
@@ -530,16 +535,24 @@ function filterPoItemsBySupplier(supplierno) {
     const noMatchRow = document.getElementById('no_matching_items_row');
     const submitBtn = document.getElementById('btn_submit_po');
     const poNumberInput = document.getElementById('po_number_input');
+    const masterCb = document.getElementById('master_item_checkbox');
 
     if (!supplierno) {
         if (banner) banner.classList.add('d-none');
         if (noSupRow) noSupRow.classList.remove('d-none');
         if (noMatchRow) noMatchRow.classList.add('d-none');
         if (submitBtn) submitBtn.disabled = true;
+        if (masterCb) {
+            masterCb.checked = false;
+            masterCb.disabled = true;
+            masterCb.indeterminate = false;
+        }
 
         document.querySelectorAll('.po-item-row').forEach(row => {
             row.classList.add('d-none');
-            row.querySelectorAll('input').forEach(inp => inp.disabled = true);
+            const cb = row.querySelector('.item-select-checkbox');
+            if (cb) cb.checked = false;
+            row.querySelectorAll('input:not(.item-select-checkbox)').forEach(inp => inp.disabled = true);
         });
         recalcTotals();
         return;
@@ -554,6 +567,7 @@ function filterPoItemsBySupplier(supplierno) {
     }
 
     let visibleCount = 0;
+    let orderableCount = 0;
     const targetSupNo = parseInt(supplierno, 10);
 
     document.querySelectorAll('.po-item-row').forEach(row => {
@@ -565,16 +579,40 @@ function filterPoItemsBySupplier(supplierno) {
         }
 
         const isMatch = suppliers.includes(targetSupNo);
+        const remQty = parseInt(row.getAttribute('data-rem-qty') || '0', 10);
+        const cb = row.querySelector('.item-select-checkbox');
 
         if (isMatch) {
             row.classList.remove('d-none');
-            row.querySelectorAll('input').forEach(inp => inp.disabled = false);
             visibleCount++;
+            if (remQty > 0) {
+                orderableCount++;
+                if (cb) {
+                    cb.checked = true;
+                    cb.disabled = false;
+                }
+                row.classList.remove('opacity-50');
+                row.querySelectorAll('input:not(.item-select-checkbox)').forEach(inp => inp.disabled = false);
+            } else {
+                if (cb) {
+                    cb.checked = false;
+                    cb.disabled = true;
+                }
+                row.classList.add('opacity-50');
+                row.querySelectorAll('input:not(.item-select-checkbox)').forEach(inp => inp.disabled = true);
+            }
         } else {
             row.classList.add('d-none');
-            row.querySelectorAll('input').forEach(inp => inp.disabled = true);
+            if (cb) cb.checked = false;
+            row.querySelectorAll('input:not(.item-select-checkbox)').forEach(inp => inp.disabled = true);
         }
     });
+
+    if (masterCb) {
+        masterCb.disabled = (orderableCount === 0);
+        masterCb.checked = (orderableCount > 0);
+        masterCb.indeterminate = false;
+    }
 
     if (banner) {
         banner.classList.remove('d-none');
@@ -582,7 +620,9 @@ function filterPoItemsBySupplier(supplierno) {
         const countEl = document.getElementById('filter_banner_count');
         const stylesEl = document.getElementById('filter_banner_styles');
         if (nameEl) nameEl.textContent = supName;
-        if (countEl) countEl.textContent = visibleCount + ' Item(s)';
+        if (countEl) {
+            countEl.textContent = visibleCount + ' Item(s)' + (orderableCount < visibleCount ? ` (${orderableCount} pending order)` : '');
+        }
         if (stylesEl) stylesEl.textContent = supStyles ? ('Styles: ' + supStyles) : '';
     }
 
@@ -590,12 +630,43 @@ function filterPoItemsBySupplier(supplierno) {
         noMatchRow.classList.toggle('d-none', visibleCount > 0);
     }
 
-    if (submitBtn) {
-        submitBtn.disabled = (visibleCount === 0);
+    // Apply default 10% wastage to active lines
+    batchSetWastage(10);
+    recalcTotals();
+}
+
+function toggleSelectAllItems(checked) {
+    const rows = document.querySelectorAll('.po-item-row:not(.d-none)');
+    rows.forEach(row => {
+        const remQty = parseInt(row.getAttribute('data-rem-qty') || '0', 10);
+        const cb = row.querySelector('.item-select-checkbox');
+        if (remQty > 0 && cb) {
+            cb.checked = checked;
+            row.querySelectorAll('input:not(.item-select-checkbox)').forEach(inp => inp.disabled = !checked);
+            row.classList.toggle('opacity-50', !checked);
+        }
+    });
+    recalcTotals();
+}
+
+function onRowSelectionChange(checkboxEl) {
+    const row = checkboxEl.closest('.po-item-row');
+    if (!row) return;
+
+    const isChecked = checkboxEl.checked;
+    row.querySelectorAll('input:not(.item-select-checkbox)').forEach(inp => inp.disabled = !isChecked);
+    row.classList.toggle('opacity-50', !isChecked);
+
+    // Update master checkbox state
+    const orderableRows = Array.from(document.querySelectorAll('.po-item-row:not(.d-none)'))
+        .filter(r => parseInt(r.getAttribute('data-rem-qty') || '0', 10) > 0);
+    const checkedRows = orderableRows.filter(r => r.querySelector('.item-select-checkbox')?.checked);
+    const masterCb = document.getElementById('master_item_checkbox');
+    if (masterCb) {
+        masterCb.checked = (orderableRows.length > 0 && checkedRows.length === orderableRows.length);
+        masterCb.indeterminate = (checkedRows.length > 0 && checkedRows.length < orderableRows.length);
     }
 
-    // Apply default 10% wastage to all newly visible lines
-    batchSetWastage(10);
     recalcTotals();
 }
 
@@ -604,6 +675,17 @@ function onRowWastageChange(inputEl) {
     if (!row) return;
 
     const baseQty = parseInt(row.getAttribute('data-base-qty') || 0, 10);
+    if (baseQty <= 0) {
+        const qtyInput = row.querySelector('.item-final-qty');
+        if (qtyInput) qtyInput.value = 0;
+        const bufferLabel = row.querySelector('.item-buffer-label');
+        if (bufferLabel) bufferLabel.textContent = '+0';
+        const lineTotalLabel = row.querySelector('.item-line-total');
+        if (lineTotalLabel) lineTotalLabel.textContent = '$0.00';
+        recalcTotals();
+        return;
+    }
+
     const pct = Math.max(0, parseFloat(inputEl.value) || 0);
     const buffer = Math.round(baseQty * (pct / 100));
     const finalQty = baseQty + buffer;
@@ -647,10 +729,29 @@ function onManualQtyChange(inputEl) {
 function batchSetWastage(pct) {
     const rows = document.querySelectorAll('.po-item-row:not(.d-none)');
     rows.forEach(row => {
+        const rowCb = row.querySelector('.item-select-checkbox');
+        if (rowCb && !rowCb.checked) {
+            return; // Skip unselected rows
+        }
+
+        const baseQty = parseInt(row.getAttribute('data-base-qty') || 0, 10);
+        
+        // If remaining quantity is 0 (already fulfilled), keep quantity and buffer at 0
+        if (baseQty <= 0) {
+            const qtyInput = row.querySelector('.item-final-qty');
+            if (qtyInput) qtyInput.value = 0;
+            const bufferLabel = row.querySelector('.item-buffer-label');
+            if (bufferLabel) bufferLabel.textContent = '+0';
+            const pctInput = row.querySelector('.item-wastage-pct');
+            if (pctInput) pctInput.value = 0;
+            const lineTotalLabel = row.querySelector('.item-line-total');
+            if (lineTotalLabel) lineTotalLabel.textContent = '$0.00';
+            return;
+        }
+
         const pctInput = row.querySelector('.item-wastage-pct');
         if (pctInput) {
             pctInput.value = pct;
-            const baseQty = parseInt(row.getAttribute('data-base-qty') || 0, 10);
             const buffer = Math.round(baseQty * (pct / 100));
             const finalQty = baseQty + buffer;
             const price = parseFloat(row.querySelector('.item-unit-price')?.value || 0);
@@ -675,8 +776,14 @@ function recalcTotals() {
     let totalBuffer = 0;
     let totalFinal = 0;
     let grandTotalAmount = 0;
+    let selectedCount = 0;
 
     rows.forEach(row => {
+        const rowCb = row.querySelector('.item-select-checkbox');
+        if (rowCb && !rowCb.checked) {
+            return; // Only calculate selected items
+        }
+
         const baseQty = parseInt(row.getAttribute('data-base-qty') || 0, 10);
         const finalQty = parseInt(row.querySelector('.item-final-qty')?.value || 0, 10);
         const buffer = Math.max(0, finalQty - baseQty);
@@ -687,6 +794,7 @@ function recalcTotals() {
         totalBuffer += buffer;
         totalFinal += finalQty;
         grandTotalAmount += lineTotal;
+        selectedCount++;
     });
 
     const fBase = document.getElementById('footer_base_total');
@@ -702,6 +810,11 @@ function recalcTotals() {
     if (fBuf) fBuf.textContent = (totalBuffer > 0 ? '+' : '') + Number(totalBuffer).toLocaleString();
     if (fFin) fFin.textContent = Number(totalFinal).toLocaleString() + ' Pcs';
     if (fTot) fTot.textContent = '$' + grandTotalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const submitBtn = document.getElementById('btn_submit_po');
+    if (submitBtn) {
+        submitBtn.disabled = (totalFinal <= 0 || selectedCount === 0);
+    }
 }
 </script>
 @endsection

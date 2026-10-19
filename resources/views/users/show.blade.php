@@ -54,6 +54,40 @@
                     </span>
                 </div>
             </div>
+
+            @if($user->branch)
+            <div class="row border-bottom pb-3">
+                <div class="col-sm-4 text-uppercase fw-bolder text-muted d-flex align-items-center" style="font-size: 11px; letter-spacing: 1px;">
+                    <i class="bi bi-building me-2 fs-5"></i> Factory
+                </div>
+                <div class="col-sm-8 fw-bold text-dark fs-6 mt-1 mt-sm-0">
+                    {{ $user->branch->br_name }}
+                    @if($user->branch->br_code)
+                        <span class="badge bg-light text-secondary border fw-semibold ms-2">{{ $user->branch->br_code }}</span>
+                    @endif
+                </div>
+            </div>
+            @elseif($user->factory)
+            <div class="row border-bottom pb-3">
+                <div class="col-sm-4 text-uppercase fw-bolder text-muted d-flex align-items-center" style="font-size: 11px; letter-spacing: 1px;">
+                    <i class="bi bi-building me-2 fs-5"></i> Factory
+                </div>
+                <div class="col-sm-8 fw-bold text-dark fs-6 mt-1 mt-sm-0">
+                    {{ $user->factory->name }}
+                </div>
+            </div>
+            @endif
+
+            @if($user->lab)
+            <div class="row border-bottom pb-3">
+                <div class="col-sm-4 text-uppercase fw-bolder text-muted d-flex align-items-center" style="font-size: 11px; letter-spacing: 1px;">
+                    <i class="bi bi-flask me-2 fs-5"></i> Lab
+                </div>
+                <div class="col-sm-8 fw-bold text-dark fs-6 mt-1 mt-sm-0">
+                    {{ $user->lab->name }}
+                </div>
+            </div>
+            @endif
             
             <div class="row border-bottom pb-3">
                 <div class="col-sm-4 text-uppercase fw-bolder text-muted d-flex align-items-center" style="font-size: 11px; letter-spacing: 1px;">

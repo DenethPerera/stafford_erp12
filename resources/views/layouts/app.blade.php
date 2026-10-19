@@ -440,12 +440,6 @@
                         <span class="sidebar-text">RFID Generation</span>
                     </a>
 
-                    <a href="{{ route('order-allocations.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('order-allocations.*') ? 'active' : '' }}" title="Order Allocations">
-                        <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
-                            <i class="bi bi-diagram-3-fill fs-5" style="color: #3b82f6;"></i>
-                        </div>
-                        <span class="sidebar-text flex-grow-1">Order Allocations</span>
-                    </a>
 
 
                     <a href="{{ route('purchase-orders.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('purchase-orders.*') ? 'active' : '' }}" title="Purchase Orders">
@@ -718,13 +712,6 @@
                     <span>RFID Generation</span>
                 </a>
 
-                
-                <a href="{{ route('order-allocations.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('order-allocations.*') ? 'active' : '' }}">
-                    <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
-                        <i class="bi bi-diagram-3-fill fs-5" style="color: #3b82f6;"></i>
-                    </div>
-                    <span>Order Allocations</span>
-                </a>
 
 
                 <a href="{{ route('purchase-orders.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('purchase-orders.*') ? 'active' : '' }}">

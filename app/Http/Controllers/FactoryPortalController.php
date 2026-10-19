@@ -11,10 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 class FactoryPortalController extends Controller
 {
-    /**
-     * Get the active branch ID for the current authenticated user.
-     * If user has mbranchlist_id, return it. If user is super_admin, allow branch selection from request or default to first branch.
-     */
+ 
     protected function getBranchId(Request $request): ?int
     {
         $user = auth()->user();
@@ -23,7 +20,6 @@ class FactoryPortalController extends Controller
             return (int) $user->mbranchlist_id;
         }
 
-        // Fallback for testing or admin impersonation
         if ($request->has('branch_id')) {
             return (int) $request->input('branch_id');
         }
@@ -31,11 +27,14 @@ class FactoryPortalController extends Controller
         return (int) EravBranch::value('id');
     }
 
-    /**
-     * Factory portal dashboard: allocated orders, KPI metrics.
-     */
+    
+      //Factory portal dashboard: allocated orders, KPI metrics.
     public function index(Request $request)
     {
+        if (auth()->user()?->isAdmin() && !auth()->user()?->isFactory()) {
+            return redirect()->route('purchase-orders.index');
+        }
+
         $branchId = $this->getBranchId($request);
         $currentBranch = EravBranch::find($branchId);
 
@@ -104,15 +103,15 @@ class FactoryPortalController extends Controller
         ));
     }
 
-    /**
-     * Show single allocated order with line items, style costing suppliers, and PO creation.
-     */
+    
+     //Show single allocated order with line items, style costing suppliers, and PO creation.
+    
     public function show(Request $request, $id)
     {
         $branchId = $this->getBranchId($request);
         $order = EravProdOrder::with(['items', 'branch'])->findOrFail($id);
 
-        // Security check: ensure order belongs to this factory
+        //ensure order belongs to this factory
         if ($order->mbranchlist_id != $branchId && !auth()->user()?->isAdmin()) {
             abort(403, 'Unauthorized access to this allocated production order.');
         }
@@ -171,9 +170,7 @@ class FactoryPortalController extends Controller
             )
             ->get();
 
-        // Map: styleid => [supplierno => supplierDetails]
         $styleSuppliersMap = [];
-        // Map: supplierno => supplier aggregated info
         $suppliersMap = [];
 
         foreach ($styleSupplierRows as $row) {
@@ -294,16 +291,21 @@ class FactoryPortalController extends Controller
         ));
     }
 
-    /**
-     * Generate / create Purchase Order for the selected supplier.
-     */
+    
+     //create Purchase Order for the selected supplier.
+     
     public function storePurchaseOrder(Request $request, $id)
     {
+        // Admins CANNOT create purchase orders.
+        if (auth()->user()?->isAdmin() || !auth()->user()?->isFactory()) {
+            abort(403, 'Admins cannot create purchase orders. Only factory accounts are authorized to generate Purchase Orders.');
+        }
+
         $branchId = $this->getBranchId($request);
         $order = EravProdOrder::with(['items', 'branch'])->findOrFail($id);
 
-        if ($order->mbranchlist_id != $branchId && !auth()->user()?->isAdmin()) {
-            abort(403);
+        if ($order->mbranchlist_id != $branchId) {
+            abort(403, 'Unauthorized access to this allocated production order.');
         }
 
         $request->validate([
@@ -336,7 +338,7 @@ class FactoryPortalController extends Controller
             ->unique()
             ->toArray();
 
-        if (!in_array((int) $request->supplierno, $validSupplierNos) && !auth()->user()?->isAdmin()) {
+        if (!in_array((int) $request->supplierno, $validSupplierNos)) {
             return back()->withErrors(['supplierno' => 'Selected supplier is not linked to this production order\'s style cost sheets.'])->withInput();
         }
 
