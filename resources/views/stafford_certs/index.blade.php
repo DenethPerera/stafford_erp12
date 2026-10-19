@@ -437,13 +437,23 @@
                             </button>
                             
                             <div x-show="activeMenu === record.id" @click.away="activeMenu = null" class="dropdown-menu show position-absolute end-0 mt-1 shadow-sm border-0 rounded-3 py-2 z-3" x-cloak style="min-width: 180px;">
-                                <button @click="editRecord(record); activeMenu = null" class="dropdown-item fw-bold text-secondary d-flex align-items-center gap-2 py-2">
-                                    @role('super_admin')
-                                    <i class="bi bi-pencil"></i> Edit
-                                    @else
-                                    <i class="bi bi-flask"></i> Enter Test Results
-                                    @endrole
+                                @role('super_admin')
+                                <button @click="editRecord(record); activeMenu = null" class="dropdown-item fw-bold text-secondary d-flex align-items-center justify-content-between py-2">
+                                    <span><i class="bi bi-pencil me-2"></i>Edit</span>
+                                    <span x-show="record.apiSyncStatus === 'synced'" class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size: 9px;">Synced</span>
                                 </button>
+                                @else
+                                <template x-if="record.apiSyncStatus !== 'synced'">
+                                    <button @click="editRecord(record); activeMenu = null" class="dropdown-item fw-bold text-secondary d-flex align-items-center gap-2 py-2">
+                                        <i class="bi bi-flask"></i> Enter Test Results
+                                    </button>
+                                </template>
+                                <template x-if="record.apiSyncStatus === 'synced'">
+                                    <span class="dropdown-item text-muted small py-2 d-flex align-items-center gap-2 opacity-75" title="Synced records can only be edited by an Administrator">
+                                        <i class="bi bi-lock-fill text-secondary"></i> Locked (Synced)
+                                    </span>
+                                </template>
+                                @endrole
                                 @role('super_admin')
                                 <button class="dropdown-item fw-bold text-secondary d-flex align-items-center gap-2 py-2">
                                     <i class="bi bi-copy"></i> New Version
@@ -633,6 +643,13 @@
                             <span class="fw-bold small">Certificate</span>
                         </div>
                     </div>
+                    @role('super_admin')
+                    <template x-if="formData.apiSyncStatus === 'synced'">
+                        <span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50 px-2.5 py-1.5 rounded-pill fw-bold text-nowrap me-3 d-inline-flex align-items-center gap-1.5" style="font-size: 11px;">
+                            <i class="bi bi-pencil-square"></i> Editing Synced Record
+                        </span>
+                    </template>
+                    @endrole
                     <button type="button" class="btn-close btn-close-white shadow-none" @click="closeWizard()" aria-label="Close"></button>
                 </div>
 
