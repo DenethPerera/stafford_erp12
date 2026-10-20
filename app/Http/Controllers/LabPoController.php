@@ -23,14 +23,31 @@ class LabPoController extends Controller
         $lab = $user?->lab;
 
         // Distinct style numbers from ERP purchase order items for the filter
-         try {
-            $styles = EravProductStyle::whereNotNull('styleid')
-                ->where('styleid', '!=', '')
-                ->distinct()
-                ->orderBy('styleid')
-                ->pluck('styleid');
+        try {
+            $styles = EravPurchaseOrderItem::whereNotNull('item_styleno')
+                ->where('item_styleno', '!=', '')
+                ->selectRaw('DISTINCT TRIM(item_styleno) as style')
+                ->orderBy('style')
+                ->pluck('style')
+                ->filter()
+                ->values();
         } catch (\Throwable $e) {
             $styles = collect();
+        }
+
+        // Distinct PO numbers for the filter
+        try {
+            $poNumbers = EravPurchaseOrder::whereNotNull('pdf_po_refno')
+                ->where('pdf_po_refno', '!=', '')
+                ->where('pdf_po_refno', '!=', '-')
+                ->has('items')
+                ->distinct()
+                ->orderBy('pdf_po_refno')
+                ->pluck('pdf_po_refno')
+                ->filter()
+                ->values();
+        } catch (\Throwable $e) {
+            $poNumbers = collect();
         }
 
         $testReportTypes = TestReportType::where('is_active', true)->orderBy('name')->get();
@@ -38,42 +55,46 @@ class LabPoController extends Controller
         $userLabName = $lab?->name ?? 'Laboratory';
         $citationMaster = $this->getCitationMaster();
 
-        return view('lab.pos.index', compact('styles', 'testReportTypes', 'labs', 'userLabName', 'citationMaster'));
+        return view('lab.pos.index', compact('styles', 'poNumbers', 'testReportTypes', 'labs', 'userLabName', 'citationMaster'));
     }
 
     /**
-     * AJAX endpoint returning paginated ERP Purchase Orders with Style filter & Report status.
-     */
-    /**
-     * AJAX endpoint returning paginated ERP Purchase Orders with Style filter & Report status.
+     * AJAX endpoint returning paginated ERP Purchase Orders grouped by:
+     * 1 Style + 1 Season + 1 Factory = 1 Consolidated Test Report row.
+     * All item variations (colors, sizes) are collapsed into this single line.
      */
     public function poData(Request $request, ApiIntegrationService $service)
     {
         $user = auth()->user();
         $labId = $user?->lab_id;
 
-        // 1. Get all PO numbers that actually have submitted test reports across all labs
+        // 1. Get all submitted test reports across all labs to check status
         $existingQualifications = StaffordQualification::withoutGlobalScopes()
             ->with('lab:id,name')
             ->whereNotNull('tests')
             ->where('tests', '!=', '')
             ->where('tests', '!=', '[]')
             ->where('tests', '!=', 'null')
-            ->get(['id', 'po_number', 'lab_id', 'status', 'api_sync_status', 'tests', 'created_at'])
-            ->filter(fn($q) => !empty($q->tests) && is_array($q->tests) && count($q->tests) > 0)
-            ->keyBy('po_number');
+            ->get(['id', 'po_number', 'style_no', 'season', 'factory_name', 'lab_id', 'status', 'api_sync_status', 'tests', 'created_at'])
+            ->filter(fn($q) => !empty($q->tests) && is_array($q->tests) && count($q->tests) > 0);
 
         $query = EravPurchaseOrder::query()
             ->whereNotNull('pdf_po_refno')
             ->where('pdf_po_refno', '!=', '')
             ->has('items');
 
-        // Filter by Style
-        if ($request->filled('style')) {
-            $style = trim($request->style);
-            $query->whereHas('items', function ($q) use ($style) {
-                $q->where('item_styleno', $style);
+        // Filter by Style (exact trimmed match)
+        $selectedStyle = $request->filled('style') ? trim($request->style) : null;
+        if (!empty($selectedStyle)) {
+            $query->whereHas('items', function ($q) use ($selectedStyle) {
+                $q->whereRaw('TRIM(item_styleno) = ?', [$selectedStyle]);
             });
+        }
+
+        // Filter and search by Purchase Order Reference Number
+        $selectedPo = $request->filled('po_number') ? trim($request->po_number) : null;
+        if (!empty($selectedPo)) {
+            $query->where('pdf_po_refno', 'like', "%{$selectedPo}%");
         }
 
         // Filter by Search Query (PO Ref, Customer/Buyer, Style No, or Description)
@@ -94,8 +115,8 @@ class LabPoController extends Controller
             $perPage = 15;
         }
 
-        // Fetch matching POs
-        if ($request->filled('style') || $request->filled('search')) {
+        // Fetch matching POs with line items and production branch
+        if ($selectedStyle || $selectedPo || $request->filled('search')) {
             $rawPos = $query->with(['items', 'prodOrders.branch'])
                 ->orderBy('id', 'desc')
                 ->get();
@@ -106,73 +127,136 @@ class LabPoController extends Controller
                 ->get();
         }
 
-        // 2. Map raw PO items
-        $mappedItems = $rawPos->map(function ($po) use ($existingQualifications, $labId) {
-            $firstItem = $po->items->first();
+        // 2. Map POs and group item variations (color/size) per Style ID
+        $mappedItems = $rawPos->flatMap(function ($po) use ($selectedStyle) {
             $prodOrder = $po->prodOrders->first(fn($p) => !empty($p->mbranchlist_id) && $p->branch !== null) ?? $po->prodOrders->first();
             $branch = $prodOrder?->branch;
             $factoryName = $branch?->br_name ? trim($branch->br_name) : ($branch?->br_code ?: 'Branch N/A');
 
-            // Retrieve Season 
             $season = $po->prodOrders->first(fn($p) => !empty($p->prod_order_season))?->prod_order_season
                 ?? $prodOrder?->prod_order_season
                 ?? '';
 
             $poRef = (string) $po->pdf_po_refno;
-            $existing = $existingQualifications->get($poRef);
 
-            return [
-                'id'            => $po->id,
-                'poNumber'      => $poRef,
-                'poDate'        => $po->porder_date ? (string)$po->porder_date : '',
-                'buyer'         => $po->customer_name ?: 'Stafford Buyer',
-                'factoryName'   => $factoryName,
-                'styleNo'       => $firstItem?->item_styleno ?: '',
-                'season'        => $season,
-                'productName'   => $firstItem?->item_description ?: '',
-                'hasReport'     => !empty($existing),
-                'isMyLab'       => $existing ? ($labId && $existing->lab_id == $labId) : false,
-                'submittingLab' => $existing?->lab?->name,
-                'reportId'      => $existing?->id,
-                'reportStatus'  => $existing?->status,
-                'apiSyncStatus' => $existing?->api_sync_status,
-                'itemCount'     => $po->items->count(),
-            ];
+            // Group line items in this PO by their Style ID
+            $groupedByStyle = $po->items->groupBy(fn($i) => trim($i->item_styleno ?: ''))
+                ->filter(fn($items, $s) => !empty($s));
+
+            // If a specific Style ID is filtered, only retain that style
+            if (!empty($selectedStyle)) {
+                $groupedByStyle = $groupedByStyle->filter(fn($items, $s) => strcasecmp($s, $selectedStyle) === 0);
+            }
+
+            // Map each Style in this PO to a consolidated record collapsing color/size variations
+            return $groupedByStyle->map(function ($styleItems, $styleNo) use ($po, $poRef, $factoryName, $season) {
+                $firstItem = $styleItems->first();
+                $totalQty = (int) $styleItems->sum('item_order_qty');
+
+                $colors = $styleItems->pluck('item_colordesc')
+                    ->map(fn($c) => trim($c))
+                    ->filter(fn($c) => !empty($c) && $c !== '-')
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $sizes = $styleItems->pluck('size_code')
+                    ->map(fn($s) => trim($s))
+                    ->filter(fn($s) => !empty($s) && $s !== '-')
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $variations = $styleItems->map(function ($item) {
+                    return [
+                        'id'       => $item->id,
+                        'color'    => $item->item_colordesc ?: ($item->item_colorcode ?: '-'),
+                        'size'     => $item->size_code ?: '-',
+                        'qty'      => (int) $item->item_order_qty,
+                        'itemCode' => $item->item_code ?: '',
+                    ];
+                })->values()->all();
+
+                return [
+                    'id'              => $po->id . '_' . md5($styleNo),
+                    'poId'            => $po->id,
+                    'poNumber'        => $poRef,
+                    'poDate'          => $po->porder_date ? (string) $po->porder_date : '',
+                    'buyer'           => $po->customer_name ?: 'Stafford Buyer',
+                    'factoryName'     => $factoryName,
+                    'styleNo'         => (string) $styleNo,
+                    'season'          => $season,
+                    'productName'     => $firstItem?->item_description ?: '',
+                    'totalQty'        => $totalQty,
+                    'variationsCount' => $styleItems->count(),
+                    'colors'          => $colors,
+                    'sizes'           => $sizes,
+                    'variations'      => $variations,
+                ];
+            })->values();
         });
 
-        // 3. Group by: Factory Name + Style No + Season
+        // 3. Core Rule Consolidation: 1 Style + 1 Season + 1 Factory = 1 Consolidated Row
         $groupedData = $mappedItems->groupBy(function ($item) {
             $factory = mb_strtolower(preg_replace('/\s+/', ' ', trim($item['factoryName'] ?? '')));
             $style   = mb_strtolower(preg_replace('/\s+/', ' ', trim($item['styleNo'] ?? '')));
             $season  = mb_strtolower(preg_replace('/\s+/', ' ', trim($item['season'] ?? '')));
             return $factory . '___' . $style . '___' . $season;
-        })->map(function ($group) {
+        })->map(function ($group) use ($existingQualifications, $labId) {
             $first = $group->first();
             $allPoNumbers = $group->pluck('poNumber')->unique()->values()->all();
+            $allVariations = $group->pluck('variations')->flatten(1)->values()->all();
+            $totalVariationsCount = $group->sum('variationsCount');
+            $totalGroupQty = $group->sum('totalQty');
+            $allColors = $group->pluck('colors')->flatten()->unique()->values()->all();
+            $allSizes = $group->pluck('sizes')->flatten()->unique()->values()->all();
 
-            // Check if ANY PO in this group already has a test report
-            $reportItem = $group->first(fn($item) => $item['hasReport']);
+            // Check if ANY qualification matches this Style + Factory + Season or PO group
+            $styleClean = mb_strtolower(trim($first['styleNo']));
+            $factoryClean = mb_strtolower(trim($first['factoryName']));
+            $seasonClean = mb_strtolower(trim($first['season']));
+
+            $existing = $existingQualifications->first(function ($q) use ($styleClean, $factoryClean, $seasonClean, $allPoNumbers) {
+                $qStyle = mb_strtolower(trim($q->style_no ?? ''));
+                $qFactory = mb_strtolower(trim($q->factory_name ?? ''));
+                $qSeason = mb_strtolower(trim($q->season ?? ''));
+
+                if (!empty($qStyle) && $qStyle === $styleClean) {
+                    if (empty($seasonClean) || empty($qSeason) || $seasonClean === $qSeason) {
+                        if (empty($factoryClean) || empty($qFactory) || str_contains($factoryClean, $qFactory) || str_contains($qFactory, $factoryClean)) {
+                            return true;
+                        }
+                    }
+                }
+
+                if (in_array((string)$q->po_number, $allPoNumbers, true)) {
+                    return true;
+                }
+
+                return false;
+            });
+
+            $hasReport = !empty($existing);
+            $isMyLab = $existing ? ($labId && $existing->lab_id == $labId) : false;
 
             return array_merge($first, [
-                'allPoNumbers'  => $allPoNumbers,
-                'otherPosCount' => count($allPoNumbers) - 1,
-                'hasReport'     => !empty($reportItem),
-                'isMyLab'       => $reportItem ? $reportItem['isMyLab'] : false,
-                'submittingLab' => $reportItem ? $reportItem['submittingLab'] : null,
-                'reportId'      => $reportItem ? $reportItem['reportId'] : null,
-                'reportStatus'  => $reportItem ? $reportItem['reportStatus'] : null,
-                'apiSyncStatus' => $reportItem ? $reportItem['apiSyncStatus'] : null,
+                'allPoNumbers'    => $allPoNumbers,
+                'otherPosCount'   => count($allPoNumbers) - 1,
+                'totalQty'        => $totalGroupQty,
+                'variationsCount' => $totalVariationsCount,
+                'colors'          => $allColors,
+                'sizes'           => $allSizes,
+                'variations'      => $allVariations,
+                'hasReport'       => $hasReport,
+                'isMyLab'         => $isMyLab,
+                'submittingLab'   => $existing?->lab?->name,
+                'reportId'        => $existing?->id,
+                'reportStatus'    => $existing?->status,
+                'apiSyncStatus'   => $existing?->api_sync_status,
             ]);
         })->values();
 
-        // 4. Filter by Report Status AFTER grouping so entire groups are included/excluded together
-        if ($request->report_status === 'needs_report') {
-            $groupedData = $groupedData->filter(fn($item) => !$item['hasReport'])->values();
-        } elseif ($request->report_status === 'added') {
-            $groupedData = $groupedData->filter(fn($item) => $item['hasReport'])->values();
-        }
-
-        // 5. Paginate the grouped results
+        // 4. Paginate the grouped results
         $total = $groupedData->count();
         $page = (int) $request->get('page', 1);
         $paginatedData = $groupedData->forPage($page, $perPage)->values();

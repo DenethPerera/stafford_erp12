@@ -139,18 +139,26 @@ class ApiIntegrationService
      * @param string $poNumber
      * @return array|null
      */
-    public function getPoDetails(string $poNumber): ?array
+    public function getPoDetails(string $poNumber, ?string $targetStyle = null): ?array
     {
         $eravPo = EravPurchaseOrder::with(['items', 'prodOrders.branch'])
             ->where('pdf_po_refno', $poNumber)
             ->first();
 
         // Check if there is an existing StaffordQualification record with lab tests
-        $existingQual = StaffordQualification::withoutGlobalScopes()
+        $qualQuery = StaffordQualification::withoutGlobalScopes()
             ->with('lab')
-            ->where('po_number', $poNumber)
-            ->latest('id')
-            ->first();
+            ->where('po_number', $poNumber);
+
+        if (!empty($targetStyle)) {
+            $qualQuery->where(function ($q) use ($targetStyle) {
+                $q->where('style_no', $targetStyle)
+                  ->orWhereNull('style_no')
+                  ->orWhere('style_no', '');
+            });
+        }
+
+        $existingQual = $qualQuery->latest('id')->first();
 
         if (!$eravPo && !$existingQual) {
             return null;
@@ -182,9 +190,8 @@ class ApiIntegrationService
             }
         }
 
-        $season = $eravPo->prodOrders->first(fn($p) => !empty($p->prod_order_season))?->prod_order_season
-        ?? $prodOrder?->prod_order_season
-        ?? ($existingQual?->season ?? '');
+        $season = $eravPo?->prodOrders?->first(fn($p) => !empty($p->prod_order_season))?->prod_order_season
+            ?? ($existingQual?->season ?? '');
 
         // If not found in ERP tables but exists in qualifications table
         if (!$eravPo) {
@@ -200,7 +207,7 @@ class ApiIntegrationService
                 'importerState'          => $existingQual->importer_state,
                 'importerPostal'         => $existingQual->importer_postal,
                 'importerCountry'        => $existingQual->importer_country,
-                'styleNo'                => $existingQual->style_no,
+                'styleNo'                => $targetStyle ?: $existingQual->style_no,
                 'erpStyleDesc'           => $existingQual->erp_style_desc,
                 'productName'            => $existingQual->product_name,
                 'brandName'              => $existingQual->brand_name,
@@ -240,7 +247,16 @@ class ApiIntegrationService
             ]);
         }
 
-        $firstItem = $eravPo->items->first();
+        // Target the specific style item if requested, otherwise fallback to first item
+        $firstItem = null;
+        if (!empty($targetStyle)) {
+            $firstItem = $eravPo->items->first(function ($i) use ($targetStyle) {
+                return strcasecmp(trim($i->item_styleno), trim($targetStyle)) === 0;
+            });
+        }
+        if (!$firstItem) {
+            $firstItem = $eravPo->items->first();
+        }
 
         // Pick production order that has a linked factory/branch
         $prodOrder = $eravPo->prodOrders->first(function ($po) {
@@ -254,14 +270,15 @@ class ApiIntegrationService
         $branch = $prodOrder?->branch;
 
         // Query product style table for brand name and fabric composition
+        $effectiveStyleNo = !empty($targetStyle) ? $targetStyle : ($firstItem?->item_styleno ?: '');
         $style = null;
-        if (!empty($firstItem?->item_styleno)) {
-            $style = EravProductStyle::where('styleid', $firstItem->item_styleno)->first();
+        if (!empty($effectiveStyleNo)) {
+            $style = EravProductStyle::where('styleid', $effectiveStyleNo)->first();
         }
 
         $brandName = $existingQual?->brand_name ?: ($style?->program_title ?: 'Stafford');
         $fabric = $style?->fabric_content ?: '';
-        $itemDesc = $firstItem?->item_description ?: '';
+        $itemDesc = $firstItem?->item_description ?: ($style?->product_description ?: '');
         $description = $itemDesc;
         if ($fabric) {
             $description = $description ? ($description . ' - ' . $fabric) : $fabric;
@@ -314,7 +331,7 @@ class ApiIntegrationService
             'importerState'          => $parsedImporter['state'],
             'importerPostal'         => $parsedImporter['postal'],
             'importerCountry'        => $parsedImporter['country'],
-            'styleNo'                => $firstItem?->item_styleno ?: '',
+            'styleNo'                => $effectiveStyleNo ?: ($firstItem?->item_styleno ?: ''),
             'erpStyleDesc'           => $itemDesc,
             'productName'            => $itemDesc ?: ($style?->product_description ?: 'ERP Product ' . $eravPo->pdf_po_refno),
             'brandName'              => $brandName,
