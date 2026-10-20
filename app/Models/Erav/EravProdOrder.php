@@ -25,5 +25,11 @@ class EravProdOrder extends Model
     public function items()
     {
         return $this->hasMany(EravProdOrderInfo::class, 'prodorder_id', 'prodorder_id');
+        
+    }
+    
+    public function purchaseOrders()
+    {
+        return $this->hasMany(\App\Models\PurchaseOrder::class, 'prodorder_id', 'prodorder_id');
     }
 }

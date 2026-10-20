@@ -48,6 +48,19 @@
                             <span class="badge bg-light text-secondary rounded-pill px-3 py-2 border fw-bold text-capitalize">
                                 {{ $user->roles->first()?->name ?? 'None' }}
                             </span>
+                            @if($user->branch)
+                                <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-1 small fw-semibold ms-1" title="Assigned Factory">
+                                   {{ $user->branch->br_name }}
+                                </span>
+                            @elseif($user->factory)
+                                <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-1 small fw-semibold ms-1" title="Assigned Factory">
+                                    <i class="bi bi-building me-1"></i>{{ $user->factory->name }}
+                                </span>
+                            @elseif($user->lab)
+                                <span class="badge bg-info bg-opacity-10 text-info rounded-pill px-2 py-1 small fw-semibold ms-1" title="Assigned Lab">
+                                   {{ $user->lab->name }}
+                                </span>
+                            @endif
                         </td>
                         <td class="py-3 px-4">
                             <div class="d-flex justify-content-end gap-1">

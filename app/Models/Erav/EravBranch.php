@@ -15,4 +15,9 @@ class EravBranch extends Model
     {
         return $this->hasMany(EravProdOrder::class, 'mbranchlist_id');
     }
+
+    public function users()
+    {
+        return $this->hasMany(\App\Models\User::class, 'mbranchlist_id', 'id');
+    }
 }

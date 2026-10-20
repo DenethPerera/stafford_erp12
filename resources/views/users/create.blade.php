@@ -86,6 +86,24 @@
                 @enderror
             </div>
 
+            <div class="mb-4" id="factory_section" style="display: {{ old('role') == 'factory' ? 'block' : 'none' }};">
+                <label for="mbranchlist_id" class="form-label text-secondary text-uppercase fw-bolder" style="font-size: 11px; letter-spacing: 1px;">Assign Factory</label>
+                <select name="mbranchlist_id" id="mbranchlist_id"
+                        class="form-select bg-light border-light fw-semibold text-dark shadow-sm px-4 py-2 {{ $errors->has('mbranchlist_id') ? 'is-invalid' : '' }}">
+                    <option value="">Select a factory...</option>
+                    @foreach($branches as $branch)
+                        <option value="{{ $branch->id }}" {{ old('mbranchlist_id') == $branch->id ? 'selected' : '' }}>
+                            {{ $branch->br_name }} {{ $branch->br_code ? "({$branch->br_code})" : '' }}
+                        </option>
+                    @endforeach
+                </select>
+                @error('mbranchlist_id')
+                    <div class="invalid-feedback fw-semibold mt-1">
+                        {{ $message }}
+                    </div>
+                @enderror
+            </div>
+
             <div class="pt-2 d-flex justify-content-end">
                 <button type="submit" class="btn btn-primary fw-bold rounded-pill shadow-sm px-4 py-2">
                     Create User
@@ -99,14 +117,16 @@
     document.addEventListener('DOMContentLoaded', function () {
         const roleSelect = document.getElementById('role');
         const labSection = document.getElementById('lab_section');
+        const factorySection = document.getElementById('factory_section');
 
-        roleSelect.addEventListener('change', function () {
-            if (this.value === 'lab') {
-                labSection.style.display = 'block';
-            } else {
-                labSection.style.display = 'none';
-            }
-        });
+        function toggleRoleSections() {
+            const role = roleSelect.value;
+            labSection.style.display = (role === 'lab') ? 'block' : 'none';
+            factorySection.style.display = (role === 'factory') ? 'block' : 'none';
+        }
+
+        roleSelect.addEventListener('change', toggleRoleSections);
+        toggleRoleSections();
     });
 </script>
 @endsection

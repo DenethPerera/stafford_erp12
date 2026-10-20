@@ -15,4 +15,8 @@ class EravProdOrderInfo extends Model
     {
         return $this->belongsTo(EravProdOrder::class, 'prodorder_id', 'prodorder_id');
     }
+      public function purchaseOrderItem()
+    {
+        return $this->belongsTo(EravPurchaseOrderItem::class, 'porder_pdf_info_id');
+    }
 }

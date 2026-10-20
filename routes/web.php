@@ -37,6 +37,16 @@ Route::middleware(['auth'])->group(function () {
         });
     });
     
+    
+    // Production Orders redirect based on role
+    Route::middleware('role:super_admin|factory')->group(function () {
+        Route::get('prod-orders', function () {
+            return auth()->user()?->isFactory() 
+                ? redirect()->route('factory-portal.index')
+                : redirect()->route('purchase-orders.index');
+        })->name('prod-orders.index');
+    });
+
     // Routes shared between super_admin and lab
     Route::middleware('role:super_admin|lab')->group(function () {
         Route::resource('factories', \App\Http\Controllers\FactoryController::class);
@@ -67,6 +77,28 @@ Route::middleware(['auth'])->group(function () {
         Route::get('completed-tasks', [\App\Http\Controllers\LabPoController::class, 'completedTasks'])->name('tasks.completed');
         Route::put('tasks/{id}', [\App\Http\Controllers\LabPoController::class, 'updateTask'])->name('tasks.update');
         Route::post('upload-report-file', [\App\Http\Controllers\LabPoController::class, 'uploadReportFile'])->name('upload-report-file');
+    });
+
+    // Stafford Order Allocations
+    Route::middleware('role:super_admin')->group(function () {
+        Route::get('order-allocations', function () {
+            return redirect()->route('purchase-orders.index');
+        })->name('order-allocations.index');
+    });
+
+    // Factory Portal - PO creation and factory dashboard 
+    Route::middleware('role:factory')->group(function () {
+        Route::get('factory-portal', [\App\Http\Controllers\FactoryPortalController::class, 'index'])->name('factory-portal.index');
+        Route::post('factory-portal/{id}/store-po', [\App\Http\Controllers\FactoryPortalController::class, 'storePurchaseOrder'])->name('factory-portal.store-po');
+    });
+
+    // View-Only for Orders & Purchase Orders
+    Route::middleware('role:factory|super_admin')->group(function () {
+        Route::get('factory-portal/{id}', [\App\Http\Controllers\FactoryPortalController::class, 'show'])->name('factory-portal.show');
+
+        // Purchase Orders
+        Route::get('purchase-orders', [\App\Http\Controllers\PurchaseOrderController::class, 'index'])->name('purchase-orders.index');
+        Route::get('purchase-orders/{id}', [\App\Http\Controllers\PurchaseOrderController::class, 'show'])->name('purchase-orders.show');
     });
 });
 

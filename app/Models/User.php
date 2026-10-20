@@ -34,6 +34,7 @@ class User extends Authenticatable
         'email',
         'password',
         'factory_id',
+        'mbranchlist_id',
         'lab_id',
     ];
 
@@ -56,6 +57,12 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Factory::class);
     }
+
+     public function branch()
+    {
+        return $this->belongsTo(\App\Models\Erav\EravBranch::class, 'mbranchlist_id', 'id');
+    }
+
 
     public function lab()
     {

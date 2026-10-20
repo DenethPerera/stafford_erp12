@@ -15,4 +15,9 @@ class EravPurchaseOrderItem extends Model
     {
         return $this->belongsTo(EravPurchaseOrder::class, 'porder_pdf_list_id');
     }
+    
+    public function productStyle()
+    {
+        return $this->belongsTo(EravProductStyle::class, 'item_styleno', 'styleid');
+    }
 }

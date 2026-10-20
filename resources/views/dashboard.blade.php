@@ -224,8 +224,8 @@
         </div>
     @endforelse
 </div>
-@else
-    <!-- LAB ROLE DASHBOARD (Kept clean and blank for now) -->
+@elserole('lab')
+    <!-- LAB ROLE DASHBOARD -->
 <div class="d-flex flex-column gap-4">
     <div class="card border-0 shadow-sm rounded-4 bubble-card overflow-hidden">
         <div class="card-body p-4 d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
@@ -244,6 +244,31 @@
                 </a>
                 <a href="{{ route('lab.tasks.completed') }}" class="btn btn-light btn-sm rounded-pill px-4 fw-bold shadow-sm border">
                     <i class="bi bi-check2-circle me-1"></i> Submitted Reports
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+@elserole('factory')
+    <!-- FACTORY ROLE DASHBOARD -->
+<div class="d-flex flex-column gap-4">
+    <div class="card border-0 shadow-sm rounded-4 bubble-card overflow-hidden text-white" style="background: linear-gradient(135deg, #00A39A, #124E78);">
+        <div class="card-body p-4 d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+            <div class="d-flex align-items-center gap-3">
+                <div class="rounded-circle d-flex align-items-center justify-content-center bg-white bg-opacity-25 flex-shrink-0 shadow-sm" style="width: 52px; height: 52px;">
+                    <i class="bi bi-building fs-4"></i>
+                </div>
+                <div>
+                    <h4 class="h5 fw-bolder text-white mb-1">{{ auth()->user()->branch?->br_name ?? 'Factory Portal' }}</h4>
+                    <p class="text-white text-opacity-75 small fw-semibold mb-0">Production orders and purchase order generation.</p>
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{{ route('factory-portal.index') }}" class="btn btn-light btn-sm rounded-pill px-4 fw-bold shadow-sm text-dark">
+                    <i class="bi bi-box-seam me-1"></i> My Allocations
+                </a>
+                <a href="{{ route('purchase-orders.index') }}" class="btn btn-outline-light btn-sm rounded-pill px-4 fw-bold shadow-sm">
+                    <i class="bi bi-file-earmark-text me-1"></i> Purchase Orders
                 </a>
             </div>
         </div>

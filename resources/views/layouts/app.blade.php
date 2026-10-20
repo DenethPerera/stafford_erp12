@@ -440,6 +440,15 @@
                         <span class="sidebar-text">RFID Generation</span>
                     </a>
 
+
+
+                    <a href="{{ route('purchase-orders.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('purchase-orders.*') ? 'active' : '' }}" title="Purchase Orders">
+                        <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                            <i class="bi bi-file-earmark-text-fill fs-5" style="color: #10b981;"></i>
+                        </div>
+                        <span class="sidebar-text">Purchase Orders</span>
+                    </a>
+
                         <!-- Master Data Dropdown (Desktop) -->
                     @php
                         $isMasterDataActive = request()->is('master-data*');
@@ -475,6 +484,21 @@
                         </div>
                         <span class="sidebar-text">Activity Logs</span>
                     </a>
+                    @endrole
+
+                     @role('factory')
+                    <a href="{{ route('factory-portal.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('factory-portal.*') ? 'active' : '' }}" title="My Allocations">
+                        <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                            <i class="bi bi-box-seam-fill fs-5" style="color: #00A39A;"></i>
+                        </div>
+                        <span class="sidebar-text flex-grow-1">My Allocations</span>
+                    </a>
+
+                    <a href="{{ route('purchase-orders.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('purchase-orders.*') ? 'active' : '' }}" title="Purchase Orders">
+                        <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                            <i class="bi bi-file-earmark-text-fill fs-5" style="color: #10b981;"></i>
+                        </div>
+                        <span class="sidebar-text flex-grow-1">Purchase Orders</span>
                     </a>
                     @endrole
 
@@ -687,6 +711,15 @@
                     </div>
                     <span>RFID Generation</span>
                 </a>
+
+
+
+                <a href="{{ route('purchase-orders.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('purchase-orders.*') ? 'active' : '' }}">
+                    <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                        <i class="bi bi-file-earmark-text-fill fs-5" style="color: #10b981;"></i>
+                    </div>
+                    <span>Purchase Orders</span>
+                </a>
                 <!-- Master Data Dropdown (Mobile) -->
                 @php
                     $isMobileMasterDataActive = request()->is('master-data*');
@@ -710,6 +743,22 @@
                         </a>
                     </div>
                 </div>
+                @endrole
+
+                 @role('factory')
+                <a href="{{ route('factory-portal.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('factory-portal.*') ? 'active' : '' }}">
+                    <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                        <i class="bi bi-box-seam-fill fs-5" style="color: #00A39A;"></i>
+                    </div>
+                    <span>My Allocations</span>
+                </a>
+
+                <a href="{{ route('purchase-orders.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('purchase-orders.*') ? 'active' : '' }}">
+                    <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                        <i class="bi bi-file-earmark-text-fill fs-5" style="color: #10b981;"></i>
+                    </div>
+                    <span>Purchase Orders</span>
+                </a>
                 @endrole
 
                 @role('lab')

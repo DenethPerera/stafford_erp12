@@ -16,6 +16,12 @@ class DashboardController extends Controller
     {
         $user = auth()->user();
 
+        // FACTORY ROLE DASHBOARD
+        if ($user && $user->isFactory()) {
+            $branch = $user->branch;
+            return view('dashboard', compact('branch'));
+        }
+
         // -------------------------------------------------------------
         // LAB ROLE DASHBOARD LOGIC (Keep Dashboard minimal / blank for now)
         // -------------------------------------------------------------

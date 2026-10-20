@@ -760,11 +760,12 @@ class StaffordQualificationController extends Controller
     public function eravPoLookup(Request $request, \App\Services\ApiIntegrationService $service)
     {
         $poNumber = trim($request->query('po', ''));
+        $style = trim($request->query('style', ''));
         if (!$poNumber) {
             return response()->json(['found' => false, 'message' => 'PO number is required'], 400);
         }
 
-        $details = $service->getPoDetails($poNumber);
+        $details = $service->getPoDetails($poNumber, $style ?: null);
         if (!$details) {
             return response()->json(['found' => false, 'message' => "PO #{$poNumber} was not found in the ERP database."], 404);
         }

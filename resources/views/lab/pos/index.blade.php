@@ -106,72 +106,53 @@
                     </div>
                 </div>
 
-                <!-- Searchable Report Status Selector (Type & Select) -->
-                <div class="col-md-5 position-relative" x-data="{
-                    open: false,
-                    query: '',
-                    options: [
-                        { value: 'all', label: 'All Purchase Orders' },
-                        { value: 'needs_report', label: 'Needs Report (Not Added)' },
-                        { value: 'added', label: 'Report Added' }
-                    ],
-                    get filteredOptions() {
-                        if (!this.query.trim()) return this.options;
-                        const q = this.query.toLowerCase().trim();
-                        return this.options.filter(o => o.label.toLowerCase().includes(q));
-                    },
-                    select(val) {
-                        reportStatus = val;
-                        this.open = false;
-                        this.query = '';
-                        fetchPos(1);
-                    }
-                }" @click.away="open = false">
+                <!-- Filter & Search by Purchase Order Ref No -->
+                <div class="col-md-5 position-relative" @click.away="poDropdownOpen = false">
                     <label class="form-label text-muted text-uppercase fw-bold" style="font-size: 11px; letter-spacing: 0.5px;">
-                        <i class="bi bi-funnel-fill text-primary me-1"></i> Report Status
+                        <i class="bi bi-file-earmark-text-fill text-primary me-1"></i> Filter by PO Reference #
                     </label>
                     <div class="position-relative">
+                        <input type="text" 
+                               x-model="selectedPo" 
+                               @focus="poDropdownOpen = true"
+                               @input.debounce.300ms="poDropdownOpen = true; fetchPos(1)"
+                               @keydown.enter.prevent="poDropdownOpen = false; fetchPos(1)"
+                               placeholder="Search or select PO # (e.g. 66185433)..." 
+                               class="form-control bg-light border-light fw-semibold rounded-pill ps-3 pe-5 py-2 shadow-none">
                         <button type="button" 
-                                class="form-control bg-light border-light fw-semibold rounded-pill text-start ps-3 pe-4 py-2 d-flex align-items-center justify-content-between shadow-none" 
-                                @click="open = !open; if(open) $nextTick(() => $refs.statusSearchInput?.focus())">
-                            <span class="text-truncate" x-text="options.find(o => o.value === reportStatus)?.label || 'All Purchase Orders'"></span>
-                            <i class="bi bi-chevron-down text-muted" style="font-size: 11px;"></i>
+                                x-show="selectedPo" 
+                                @click="clearPo()" 
+                                class="btn btn-sm btn-link text-muted position-absolute end-0 top-50 translate-middle-y me-3 text-decoration-none p-0" 
+                                title="Clear PO filter">
+                            <i class="bi bi-x-circle-fill"></i>
                         </button>
+                        <span x-show="!selectedPo" class="position-absolute end-0 top-50 translate-middle-y me-3 text-muted pointer-events-none">
+                            <i class="bi bi-search text-muted small"></i>
+                        </span>
                     </div>
 
-                    <!-- Searchable Dropdown Popup -->
-                    <div x-show="open" 
+                    <!-- Dropdown suggestions -->
+                    <div x-show="poDropdownOpen && filteredPoList.length > 0" 
                          x-transition:enter="transition ease-out duration-150"
                          x-transition:enter-start="opacity-0 transform scale-95"
                          x-transition:enter-end="opacity-100 transform scale-100"
                          class="dropdown-menu show shadow-lg border-0 rounded-4 p-2 mt-1 w-100 position-absolute z-3" 
-                         style="max-height: 250px; overflow: hidden; display: flex; flex-direction: column;" 
+                         style="max-height: 250px; overflow-y: auto;" 
                          x-cloak>
-                        <div class="p-1 mb-2">
-                            <div class="input-group input-group-sm">
-                                <span class="input-group-text bg-light border-0"><i class="bi bi-search text-muted"></i></span>
-                                <input type="text" 
-                                       x-ref="statusSearchInput" 
-                                       x-model="query" 
-                                       placeholder="Type to filter..." 
-                                       class="form-control bg-light border-0 fw-semibold">
-                                <button type="button" x-show="query" @click="query = ''" class="btn btn-light border-0 text-muted">
-                                    <i class="bi bi-x"></i>
-                                </button>
-                            </div>
+                        <div class="px-2 py-1 text-muted text-uppercase fw-bold d-flex justify-content-between align-items-center" style="font-size: 10px; letter-spacing: 0.5px;">
+                            <span>Suggested PO Numbers</span>
+                            <span class="badge bg-light text-muted" x-text="filteredPoList.length"></span>
                         </div>
-
-                        <div class="overflow-y-auto flex-grow-1" style="max-height: 180px;">
-                            <template x-for="opt in filteredOptions" :key="opt.value">
-                                <button type="button" 
-                                        class="dropdown-item rounded-3 py-2 fw-semibold d-flex align-items-center justify-content-between mb-1" 
-                                        :class="reportStatus === opt.value ? 'bg-primary text-white' : ''"
-                                        @click="select(opt.value)">
-                                    <span x-text="opt.label"></span>
-                                    <i x-show="reportStatus === opt.value" class="bi bi-check-lg ms-2"></i>
-                                </button>
-                            </template>
-                        </div>
+                        <template x-for="p in filteredPoList" :key="p">
+                            <button type="button" 
+                                    class="dropdown-item rounded-3 py-2 fw-semibold text-truncate d-flex align-items-center justify-content-between" 
+                                    :class="selectedPo === p ? 'bg-primary text-white' : ''"
+                                    @click="selectPo(p)"
+                                    :title="p">
+                                <span x-text="p"></span>
+                                <i x-show="selectedPo === p" class="bi bi-check-lg ms-2"></i>
+                            </button>
+                        </template>
                     </div>
                 </div>
 
@@ -208,13 +189,14 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr class="text-uppercase text-muted" style="font-size: 11px; letter-spacing: 0.5px;">
-                        <th class="py-3 px-4">PO Number</th>
+                        <th class="py-3 px-4">PO Reference</th>
                         <th class="py-3 px-3">Date</th>
                         <th class="py-3 px-3">Buyer</th>
                         <th class="py-3 px-3">Factory / Branch</th>
-                        <th class="py-3 px-3">Style No</th>
+                        <th class="py-3 px-3">Style ID</th>
                         <th class="py-3 px-3">Season</th>
                         <th class="py-3 px-3">Product Description</th>
+                        <th class="py-3 px-3">Variations</th>
                         <th class="py-3 px-3 text-center">Status</th>
                         <th class="py-3 px-4 text-end">Action</th>
                     </tr>
@@ -222,7 +204,7 @@
                 <tbody>
                     <template x-if="isLoading && pos.length === 0">
                         <tr>
-                            <td colspan="9" class="text-center py-5 text-muted">
+                            <td colspan="10" class="text-center py-5 text-muted">
                                 <div class="spinner-border text-primary mb-2" role="status"></div>
                                 <div class="fw-semibold small">Fetching Purchase Orders from ERP Database...</div>
                             </td>
@@ -231,7 +213,7 @@
 
                     <template x-if="!isLoading && pos.length === 0">
                         <tr>
-                            <td colspan="8" class="text-center py-5 text-muted">
+                            <td colspan="10" class="text-center py-5 text-muted">
                                 <i class="bi bi-inbox fs-1 text-muted opacity-50 d-block mb-2"></i>
                                 <div class="fw-bold">No Purchase Orders Found</div>
                                 <div class="small">Try adjusting your style filter or search criteria.</div>
@@ -249,27 +231,27 @@
                                     </div>
                                     <div>
                                         <div class="d-flex align-items-center gap-1">
-    <span class="fw-bolder text-dark" x-text="po.poNumber"></span>
+                                            <span class="fw-bolder text-dark" x-text="po.poNumber"></span>
 
-    <!-- Show Eye icon and +N badge ONLY if there are 2 or more POs in this group -->
-    <template x-if="po.otherPosCount > 0">
-        <div class="d-inline-flex align-items-center gap-1">
-            <button type="button" 
-                    class="btn btn-sm btn-link text-primary p-0 text-decoration-none ms-1 d-inline-flex align-items-center" 
-                    @click="openViewPosModal(po)" 
-                    :title="'View all ' + (po.allPoNumbers ? po.allPoNumbers.length : 1) + ' POs in this group'">
-                <i class="bi bi-eye"></i>
-            </button>
-            <span class="badge bg-light text-muted border" 
-                  style="font-size: 10px; cursor: pointer;" 
-                  @click="openViewPosModal(po)"
-                  :title="'Click to view all ' + (po.allPoNumbers ? po.allPoNumbers.length : 1) + ' POs'" 
-                  x-text="'+' + po.otherPosCount + ' other PO' + (po.otherPosCount > 1 ? 's' : '')">
-            </span>
-        </div>
-    </template>
-</div>
-                                        <div class="text-muted small" style="font-size: 10px;" x-text="po.itemCount + ' item(s)'"></div>
+                                            <!-- Show Eye icon and +N badge ONLY if there are 2 or more POs in this group -->
+                                            <template x-if="po.otherPosCount > 0">
+                                                <div class="d-inline-flex align-items-center gap-1">
+                                                    <button type="button" 
+                                                            class="btn btn-sm btn-link text-primary p-0 text-decoration-none ms-1 d-inline-flex align-items-center" 
+                                                            @click="openViewPosModal(po)" 
+                                                            :title="'View all ' + (po.allPoNumbers ? po.allPoNumbers.length : 1) + ' POs in this group'">
+                                                        <i class="bi bi-eye"></i>
+                                                    </button>
+                                                    <span class="badge bg-light text-muted border" 
+                                                          style="font-size: 10px; cursor: pointer;" 
+                                                          @click="openViewPosModal(po)"
+                                                          :title="'Click to view all ' + (po.allPoNumbers ? po.allPoNumbers.length : 1) + ' POs'" 
+                                                          x-text="'+' + po.otherPosCount + ' other PO' + (po.otherPosCount > 1 ? 's' : '')">
+                                                    </span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <div class="text-muted small" style="font-size: 10px;" x-text="(po.allPoNumbers ? po.allPoNumbers.length : 1) + ' PO(s) • ' + (po.totalQty ? Number(po.totalQty).toLocaleString() : 0) + ' pcs'"></div>
                                     </div>
                                 </div>
                             </td>
@@ -281,27 +263,46 @@
 
                             <!-- Buyer -->
                             <td class="py-3 px-3">
-                                <span class="fw-bold text-dark small text-truncate d-inline-block" style="max-width: 180px;" x-text="po.buyer" :title="po.buyer"></span>
+                                <span class="fw-bold text-dark small text-truncate d-inline-block" style="max-width: 170px;" x-text="po.buyer" :title="po.buyer"></span>
                             </td>
 
                             <!-- Factory -->
                             <td class="py-3 px-3">
-                                <span class="fw-semibold text-secondary small text-truncate d-inline-block" style="max-width: 160px;" x-text="po.factoryName || 'Branch N/A'" :title="po.factoryName"></span>
+                                <span class="fw-semibold text-secondary small text-truncate d-inline-block" style="max-width: 150px;" x-text="po.factoryName || 'Branch N/A'" :title="po.factoryName"></span>
                             </td>
 
                             <!-- Style No -->
                             <td class="py-3 px-3">
-                                <span class="badge bg-light text-dark border fw-bold px-2 py-1" style="font-size: 11px;" x-text="po.styleNo || '-'"></span>
+                                <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 fw-bold px-2.5 py-1.5" style="font-size: 12px;" x-text="po.styleNo || '-'"></span>
                             </td>
 
                             <!-- Season -->
-<td class="py-3 px-3">
-    <span class="badge bg-secondary bg-opacity-10 text-secondary border fw-semibold px-2 py-1" style="font-size: 11px;" x-text="po.season || '-'"></span>
-</td>
+                            <td class="py-3 px-3">
+                                <span class="badge bg-secondary bg-opacity-10 text-secondary border fw-semibold px-2 py-1" style="font-size: 11px;" x-text="po.season || '-'"></span>
+                            </td>
 
                             <!-- Product Description -->
                             <td class="py-3 px-3">
-                                <span class="text-secondary small text-truncate d-inline-block" style="max-width: 220px;" x-text="po.productName || '-'" :title="po.productName"></span>
+                                <span class="text-secondary small text-truncate d-inline-block" style="max-width: 200px;" x-text="po.productName || '-'" :title="po.productName"></span>
+                            </td>
+
+                            <!-- Consolidated Variations (Collapsed Colors/Sizes) -->
+                            <td class="py-3 px-3">
+                                <div class="d-flex align-items-center gap-1">
+                                    <span class="badge bg-light text-dark border fw-semibold px-2 py-1" style="font-size: 11px;" x-text="(po.variationsCount || 1) + ' variation' + ((po.variationsCount || 1) > 1 ? 's' : '')"></span>
+                                    <template x-if="po.variations && po.variations.length > 0">
+                                        <button type="button" 
+                                                class="btn btn-sm btn-link text-primary p-0 text-decoration-none ms-1" 
+                                                @click="openVariationsModal(po)" 
+                                                title="View collapsed color and size variations">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </template>
+                                </div>
+                                <div class="text-muted" style="font-size: 10px;" x-show="po.colors && po.colors.length">
+                                    <span x-text="po.colors.length + ' color' + (po.colors.length > 1 ? 's' : '')"></span>
+                                    <span x-show="po.sizes && po.sizes.length" x-text="' • ' + po.sizes.length + ' size' + (po.sizes.length > 1 ? 's' : '')"></span>
+                                </div>
                             </td>
 
                             <!-- Report Status Badge -->
@@ -326,21 +327,22 @@
                                 </template>
                             </td>
 
-                            <!-- Action Column -->
+                            <!-- Action Column: Upload exclusively on consolidated row -->
                             <td class="py-3 px-4 text-end">
                                 <template x-if="!po.hasReport">
-    <button type="button" 
-            class="btn btn-sm btn-primary rounded-pill px-3 fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-nowrap"
-            @click="openAddTestModal(po)">
-        <i class="bi bi-plus-circle"></i> Add Test
-    </button>
-</template>
+                                    <button type="button" 
+                                            class="btn btn-sm btn-primary rounded-pill px-3 fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-nowrap"
+                                            @click="openAddTestModal(po)"
+                                            title="Attach and upload Test Report for this consolidated Style">
+                                        <i class="bi bi-cloud-arrow-up-fill me-1"></i> Upload Report
+                                    </button>
+                                </template>
                                 <template x-if="po.hasReport">
                                     <button type="button" 
                                             class="btn btn-sm btn-light text-muted rounded-pill px-3 fw-semibold border d-inline-flex align-items-center gap-1"
                                             disabled
                                             :title="po.isMyLab ? 'Test report has already been created by your lab' : ('Test report has already been submitted by ' + (po.submittingLab || 'another laboratory'))">
-                                        <i class="bi bi-check2-all text-success"></i> Added
+                                        <i class="bi bi-check2-all text-success"></i> Report Added
                                     </button>
                                 </template>
                             </td>
@@ -414,6 +416,71 @@
                                 <span class="badge bg-light text-muted border" x-text="'#' + (idx + 1)"></span>
                             </div>
                         </template>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 px-4 pb-4 pt-1 bg-white">
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill px-4 w-100 fw-bold shadow-sm" data-bs-dismiss="modal">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW COLLAPSED VARIATIONS MODAL (Color & Size Breakdown) -->
+    <div class="modal fade" id="viewVariationsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+                <div class="modal-header border-0 pb-2 px-4 pt-4 bg-white d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style="width: 36px; height: 36px;">
+                            <i class="bi bi-layers-fill fs-6"></i>
+                        </div>
+                        <div>
+                            <h6 class="fw-bolder text-dark mb-0">Color & Size Variations</h6>
+                            <span class="text-muted small" x-text="'Style: ' + (viewingVariationsModal.styleNo || '-') + ' • ' + (viewingVariationsModal.variations ? viewingVariationsModal.variations.length : 0) + ' variation(s)'"></span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body px-4 py-3">
+                    <div class="p-2 mb-3 bg-light rounded-3 small">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-muted">Style ID:</span>
+                            <span class="fw-bold text-dark text-truncate ms-2" x-text="viewingVariationsModal.styleNo || '-'"></span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-muted">Season:</span>
+                            <span class="badge bg-secondary bg-opacity-10 text-secondary border fw-semibold ms-2" x-text="viewingVariationsModal.season || '-'"></span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="text-muted">Consolidation:</span>
+                            <span class="text-muted fst-italic ms-2">1 Test Report applies to this entire Style.</span>
+                        </div>
+                    </div>
+
+                    <label class="form-label text-muted text-uppercase fw-bold mb-2" style="font-size: 11px; letter-spacing: 0.5px;">
+                        Collapsed Variations Breakdown
+                    </label>
+                    <div class="table-responsive rounded-3 border" style="max-height: 260px; overflow-y: auto;">
+                        <table class="table table-sm table-hover mb-0 align-middle" style="font-size: 12px;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="py-2 px-3">Color</th>
+                                    <th class="py-2 px-3">Size</th>
+                                    <th class="py-2 px-3 text-end">Order Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="(v, vIdx) in viewingVariationsModal.variations" :key="vIdx">
+                                    <tr>
+                                        <td class="py-2 px-3 fw-semibold text-dark" x-text="v.color || '-'"></td>
+                                        <td class="py-2 px-3"><span class="badge bg-light text-dark border" x-text="v.size || '-'"></span></td>
+                                        <td class="py-2 px-3 text-end fw-bold" x-text="v.qty ? Number(v.qty).toLocaleString() : '-'"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
                 <div class="modal-footer border-0 px-4 pb-4 pt-1 bg-white">
@@ -805,7 +872,9 @@
             selectedStyle: '',
             styleDropdownOpen: false,
             styleSearchQuery: '',
-            reportStatus: 'all',
+            poNumbers: @json($poNumbers ?? []),
+            selectedPo: '',
+            poDropdownOpen: false,
             searchTerm: '',
             isLoading: false,
             isLoadingPoDetails: false,
@@ -818,6 +887,14 @@
                 return this.styles.filter(s => s.toLowerCase().includes(q));
             },
 
+            get filteredPoList() {
+                if (!this.selectedPo || !this.selectedPo.trim()) {
+                    return this.poNumbers.slice(0, 50);
+                }
+                const q = this.selectedPo.toLowerCase().trim();
+                return this.poNumbers.filter(p => p.toLowerCase().includes(q)).slice(0, 50);
+            },
+
             selectStyle(s) {
                 this.selectedStyle = s;
                 this.styleDropdownOpen = false;
@@ -828,6 +905,18 @@
             clearStyle() {
                 this.selectedStyle = '';
                 this.styleSearchQuery = '';
+                this.fetchPos(1);
+            },
+
+            selectPo(p) {
+                this.selectedPo = p;
+                this.poDropdownOpen = false;
+                this.fetchPos(1);
+            },
+
+            clearPo() {
+                this.selectedPo = '';
+                this.poDropdownOpen = false;
                 this.fetchPos(1);
             },
 
@@ -850,6 +939,12 @@
                 styleNo: '',
                 season: '',
                 allPoNumbers: []
+            },
+
+            viewingVariationsModal: {
+                styleNo: '',
+                season: '',
+                variations: []
             },
 
             citationMaster: @json($citationMaster ?? []),
@@ -891,7 +986,8 @@
                 this.selectedStyle = '';
                 this.styleSearchQuery = '';
                 this.styleDropdownOpen = false;
-                this.reportStatus = 'all';
+                this.selectedPo = '';
+                this.poDropdownOpen = false;
                 this.searchTerm = '';
                 this.fetchPos(1);
             },
@@ -901,7 +997,7 @@
                 const params = new URLSearchParams({
                     page: page,
                     style: this.selectedStyle,
-                    report_status: this.reportStatus,
+                    po_number: this.selectedPo,
                     search: this.searchTerm
                 });
 
@@ -932,35 +1028,44 @@
                 modal.show();
             },
 
-            openAddTestModal(po) {
-    this.isLoadingPoDetails = true;
-    
-    const poNumber = typeof po === 'object' ? po.poNumber : po;
-    const allPos = (typeof po === 'object' && po.allPoNumbers && po.allPoNumbers.length > 0)
-        ? po.allPoNumbers
-        : [poNumber];
+            openVariationsModal(po) {
+                this.viewingVariationsModal.styleNo = po.styleNo || '';
+                this.viewingVariationsModal.season = po.season || '';
+                this.viewingVariationsModal.variations = po.variations || [];
+                const modal = new bootstrap.Modal(document.getElementById('viewVariationsModal'));
+                modal.show();
+            },
 
-    // Initialize default form
-    this.formData = {
-        poNumber: poNumber,
-        season: (typeof po === 'object' && po.season) ? po.season : '',
-        allPoNumbers: allPos, // Preserves the entire group list for submission
-        poDate: '',
-        buyer: '',
-        styleNo: '',
-        productName: '',
-        factoryName: '',
-        factoryAddress: '',
-        certType: 'GCC',
-        intendedUse: '',
-        childrenProduct: '',
-        manufactureDate: new Date().toISOString().slice(0, 7),
-        lotNumber: poNumber,
-        primaryProductId: (typeof po === 'object' && po.styleNo) ? po.styleNo : poNumber,
-        productIdType: 'Model #',
-        versionId: Math.random().toString(16).substring(2, 10).toUpperCase(),
-        status: 'Complete',
-        tests: [{
+            openAddTestModal(po) {
+                this.isLoadingPoDetails = true;
+                
+                const poNumber = typeof po === 'object' ? po.poNumber : po;
+                const styleNo = typeof po === 'object' ? (po.styleNo || '') : '';
+                const allPos = (typeof po === 'object' && po.allPoNumbers && po.allPoNumbers.length > 0)
+                    ? po.allPoNumbers
+                    : [poNumber];
+
+                // Initialize default form with consolidated style data
+                this.formData = {
+                    poNumber: poNumber,
+                    season: (typeof po === 'object' && po.season) ? po.season : '',
+                    allPoNumbers: allPos, // Preserves the entire group list for submission
+                    poDate: (typeof po === 'object' && po.poDate) ? po.poDate : '',
+                    buyer: (typeof po === 'object' && po.buyer) ? po.buyer : '',
+                    styleNo: styleNo,
+                    productName: (typeof po === 'object' && po.productName) ? po.productName : '',
+                    factoryName: (typeof po === 'object' && po.factoryName) ? po.factoryName : '',
+                    factoryAddress: '',
+                    certType: 'GCC',
+                    intendedUse: '',
+                    childrenProduct: '',
+                    manufactureDate: new Date().toISOString().slice(0, 7),
+                    lotNumber: poNumber,
+                    primaryProductId: styleNo || poNumber,
+                    productIdType: 'Model #',
+                    versionId: Math.random().toString(16).substring(2, 10).toUpperCase(),
+                    status: 'Complete',
+                    tests: [{
                         labType: 'CPSC-Accepted',
                         labName: this.userLabName,
                         labCpscId: '',
@@ -983,19 +1088,20 @@
                 const modal = new bootstrap.Modal(document.getElementById('addTestModal'));
                 modal.show();
 
-                // Fetch real ERP PO details to pre-fill
-                fetch(`{{ url('stafford-certs/erp-po-lookup') }}?po=${encodeURIComponent(poNumber)}`, {
+                // Fetch real ERP PO details targeting the specific selected style
+                const url = `{{ url('stafford-certs/erp-po-lookup') }}?po=${encodeURIComponent(poNumber)}&style=${encodeURIComponent(styleNo)}`;
+                fetch(url, {
                     headers: { 'Accept': 'application/json' }
                 })
                 .then(r => r.json())
                 .then(data => {
                     if (data && data.found) {
                         if (data.season) this.formData.season = data.season;
-                        this.formData.poDate = data.poDate || '';
-                        this.formData.buyer = data.buyer || data.importerName || '';
-                        this.formData.styleNo = data.styleNo || '';
-                        this.formData.productName = data.productName || data.description || '';
-                        this.formData.factoryName = data.factoryName || '';
+                        this.formData.poDate = data.poDate || this.formData.poDate;
+                        this.formData.buyer = data.buyer || data.importerName || this.formData.buyer;
+                        this.formData.styleNo = styleNo || data.styleNo || '';
+                        this.formData.productName = (typeof po === 'object' && po.productName) ? po.productName : (data.productName || data.description || '');
+                        this.formData.factoryName = (typeof po === 'object' && po.factoryName) ? po.factoryName : (data.factoryName || '');
                         this.formData.factoryAddress = data.factoryAddress || '';
                         this.formData.factoryCity = data.factoryCity || '';
                         this.formData.factoryState = data.factoryState || '';
@@ -1009,7 +1115,7 @@
                         this.formData.importerState = data.importerState || '';
                         this.formData.importerCountry = data.importerCountry || '';
                         this.formData.importerPostal = data.importerPostal || '';
-                        this.formData.primaryProductId = data.primaryProductId || data.upc || data.styleNo || poNumber;
+                        this.formData.primaryProductId = styleNo || data.primaryProductId || data.upc || poNumber;
                         this.formData.productIdType = data.productIdType || 'Model #';
                         this.formData.lotNumber = data.lotNumber || poNumber;
                         if (data.manufactureDate) {
@@ -1195,8 +1301,8 @@
 
                         this.showToast('success', 'Report Created', `Test report for PO #${this.formData.poNumber} has been successfully submitted!`);
                         
-                        // Update local row state (checks primary PO or any grouped PO)
-                        const found = this.pos.find(p => p.poNumber === this.formData.poNumber || (p.allPoNumbers && p.allPoNumbers.includes(this.formData.poNumber)));
+                        // Update local row state (checks primary PO or any grouped PO for this style)
+                        const found = this.pos.find(p => (p.poNumber === this.formData.poNumber || (p.allPoNumbers && p.allPoNumbers.includes(this.formData.poNumber))) && (!p.styleNo || !this.formData.styleNo || p.styleNo === this.formData.styleNo));
                         if (found) {
                             found.hasReport = true;
                             found.isMyLab = true;
