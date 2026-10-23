@@ -5,20 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ config('app.name', 'CertTrack') }}</title>
-    
+
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    
+
     @vite(['resources/sass/app.scss', 'resources/js/app.js'])
-    
+
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    
+
     <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
+
     <style>
         [x-cloak] { display: none !important; }
 
@@ -33,13 +33,13 @@
         body {
             font-family: 'Nunito', sans-serif;
             background-color: #f2f9f9;
-            background-image: 
-                radial-gradient(at 0% 0%, hsla(186, 33%, 94%, 1) 0, transparent 50%), 
-                radial-gradient(at 50% 0%, hsla(193, 85%, 28%, 0.03) 0, transparent 50%), 
+            background-image:
+                radial-gradient(at 0% 0%, hsla(186, 33%, 94%, 1) 0, transparent 50%),
+                radial-gradient(at 50% 0%, hsla(193, 85%, 28%, 0.03) 0, transparent 50%),
                 radial-gradient(at 100% 0%, hsla(175, 100%, 33%, 0.04) 0, transparent 50%);
             position: relative;
         }
-        
+
         body::before {
             content: '';
             position: absolute;
@@ -54,7 +54,7 @@
             background: radial-gradient(circle, rgba(18, 78, 120, 0.1) 0%, rgba(255,255,255,0) 70%);
             z-index: -1; pointer-events: none;
         }
-        
+
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(155, 163, 175, 0.5); border-radius: 20px; }
@@ -108,7 +108,7 @@
             text-decoration: none;
             cursor: pointer;
         }
-        
+
         .nav-item.active {
             background: linear-gradient(135deg, #124E78, #00A39A);
             color: #ffffff !important;
@@ -125,7 +125,7 @@
             box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.05);
             transform: translateX(4px);
         }
-        
+
         .nav-icon-wrapper {
             display: flex;
             align-items: center;
@@ -134,7 +134,7 @@
             transition: all 0.3s ease;
             flex-shrink: 0;
         }
-        
+
         .nav-item:not(.active) .nav-icon-wrapper {
             background: white;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
@@ -157,14 +157,14 @@
             background-color: rgba(0, 0, 0, 0.03);
             transform: translateX(2px);
         }
-        
+
         /* Layout */
         .wrapper {
             display: flex;
             height: 100vh;
             overflow: hidden;
         }
-        
+
         .sidebar {
             width: 260px;
             flex-shrink: 0;
@@ -245,7 +245,7 @@
             box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.08);
             overflow: hidden;
         }
-        
+
         .main-content {
             flex-grow: 1;
             display: flex;
@@ -317,7 +317,7 @@
                 <!-- Navigation Links -->
                 <nav class="flex-grow-1 overflow-y-auto px-2">
                     <div class="text-uppercase fw-bolder text-muted mb-2 ms-2 sidebar-text" style="font-size: 10px; letter-spacing: 1px;">Menu</div>
-                    
+
                     <a href="{{ route('dashboard') }}" class="nav-item px-3 py-2 {{ request()->routeIs('dashboard') ? 'active' : '' }}" title="Dashboard">
                         <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
                             <i class="bi bi-grid-fill fs-5"></i>
@@ -329,12 +329,12 @@
                     @php
                         $isUsersActive = request()->routeIs('users.*') || request()->routeIs('roles.*') || request()->routeIs('permissions.*') || request()->routeIs('cpsc-tokens.*');
                     @endphp
-                    <a class="nav-item px-3 py-2 {{ $isUsersActive ? 'active' : '' }}" 
-                       data-bs-toggle="collapse" 
-                       href="#usersCollapse" 
-                       role="button" 
-                       aria-expanded="{{ $isUsersActive ? 'true' : 'false' }}" 
-                       aria-controls="usersCollapse" 
+                    <a class="nav-item px-3 py-2 {{ $isUsersActive ? 'active' : '' }}"
+                       data-bs-toggle="collapse"
+                       href="#usersCollapse"
+                       role="button"
+                       aria-expanded="{{ $isUsersActive ? 'true' : 'false' }}"
+                       aria-controls="usersCollapse"
                        title="Users">
                         <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
                             <i class="bi bi-people-fill fs-5"></i>
@@ -358,7 +358,7 @@
                             </a>
                         </div>
                     </div>
-                    
+
                     <a href="{{ route('labs.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('labs.*') ? 'active' : '' }}" title="Labs">
                         <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
                             <i class="bi bi-flask-fill fs-5"></i>
@@ -369,12 +369,12 @@
                     @php
                         $isFactoriesActive = request()->routeIs('factories.*') || request()->routeIs('certificates.*');
                     @endphp
-                    <a class="nav-item px-3 py-2 {{ $isFactoriesActive ? 'active' : '' }}" 
-                       data-bs-toggle="collapse" 
-                       href="#factoriesCollapse" 
-                       role="button" 
-                       aria-expanded="{{ $isFactoriesActive ? 'true' : 'false' }}" 
-                       aria-controls="factoriesCollapse" 
+                    <a class="nav-item px-3 py-2 {{ $isFactoriesActive ? 'active' : '' }}"
+                       data-bs-toggle="collapse"
+                       href="#factoriesCollapse"
+                       role="button"
+                       aria-expanded="{{ $isFactoriesActive ? 'true' : 'false' }}"
+                       aria-controls="factoriesCollapse"
                        title="Factories">
                         <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
                             <i class="bi bi-buildings-fill fs-5"></i>
@@ -387,7 +387,7 @@
                             <a href="{{ route('factories.index') }}" class="text-decoration-none fw-bold submenu-item {{ request()->routeIs('factories.index') ? 'active' : 'text-muted' }}" style="font-size: 13px;">
                                 @if(request()->routeIs('factories.index')) <i class="bi bi-circle-fill me-2" style="font-size: 5px;"></i> @endif All Factories
                             </a>
-                            
+
                             @if(request()->routeIs('factories.show') || request()->routeIs('certificates.*'))
                                 @if(request()->routeIs('certificates.*'))
                                     <div class="text-decoration-none fw-bold submenu-item text-muted opacity-50" style="font-size: 13px; cursor: not-allowed;">
@@ -404,7 +404,7 @@
                             @endif
                         </div>
                     </div>
-                    
+
                     <a href="{{ route('standards.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('standards.*') ? 'active' : '' }}" title="Standards">
                         <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
                             <i class="bi bi-file-earmark-text-fill fs-5"></i>
@@ -449,16 +449,25 @@
                         <span class="sidebar-text">Purchase Orders</span>
                     </a>
 
+
+                             {{-- up in here put shipment managemnt section to main out  --}}
+
+
+                    @include('shipment_management.partials.shipment-menu', [
+                        'collapseId' => 'shipmentManagementCollapse',
+                        'isMobile' => false,
+                    ])
+
                         <!-- Master Data Dropdown (Desktop) -->
                     @php
                         $isMasterDataActive = request()->is('master-data*');
                     @endphp
-                    <a class="nav-item px-3 py-2 {{ $isMasterDataActive ? 'active' : '' }}" 
-                       data-bs-toggle="collapse" 
-                       href="#masterDataCollapse" 
-                       role="button" 
-                       aria-expanded="{{ $isMasterDataActive ? 'true' : 'false' }}" 
-                       aria-controls="masterDataCollapse" 
+                    <a class="nav-item px-3 py-2 {{ $isMasterDataActive ? 'active' : '' }}"
+                       data-bs-toggle="collapse"
+                       href="#masterDataCollapse"
+                       role="button"
+                       aria-expanded="{{ $isMasterDataActive ? 'true' : 'false' }}"
+                       aria-controls="masterDataCollapse"
                        title="Master Data">
                         <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
                             <i class="bi bi-database-fill-gear fs-5"></i>
@@ -549,7 +558,7 @@
                     </button>
                     <h1 class="h4 mb-0 fw-bolder text-dark text-capitalize">@yield('header', 'CertTrack')</h1>
                 </div>
-                
+
                 <div class="d-flex align-items-center gap-3">
                     @unless(request()->routeIs('dashboard'))
                     <div class="d-none d-md-flex align-items-center position-relative">
@@ -593,7 +602,7 @@
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 @endif
-                
+
                 @yield('content')
             </div>
         </main>
@@ -613,7 +622,7 @@
         <div class="offcanvas-body">
             <nav class="flex-grow-1">
                 <div class="text-uppercase fw-bolder text-muted mb-2 ms-2" style="font-size: 10px; letter-spacing: 1px;">Menu</div>
-                
+
                 <a href="{{ route('dashboard') }}" class="nav-item px-3 py-2 {{ request()->routeIs('dashboard') ? 'active' : '' }}">
                     <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
                         <i class="bi bi-grid-fill fs-5"></i>
@@ -625,11 +634,11 @@
                 @php
                     $isMobileUsersActive = request()->routeIs('users.*') || request()->routeIs('roles.*') || request()->routeIs('permissions.*') || request()->routeIs('cpsc-tokens.*');
                 @endphp
-                <a class="nav-item px-3 py-2 {{ $isMobileUsersActive ? 'active' : '' }}" 
-                   data-bs-toggle="collapse" 
-                   href="#mobileUsersCollapse" 
-                   role="button" 
-                   aria-expanded="{{ $isMobileUsersActive ? 'true' : 'false' }}" 
+                <a class="nav-item px-3 py-2 {{ $isMobileUsersActive ? 'active' : '' }}"
+                   data-bs-toggle="collapse"
+                   href="#mobileUsersCollapse"
+                   role="button"
+                   aria-expanded="{{ $isMobileUsersActive ? 'true' : 'false' }}"
                    aria-controls="mobileUsersCollapse">
                     <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
                         <i class="bi bi-people-fill fs-5"></i>
@@ -653,15 +662,15 @@
                         </a>
                     </div>
                 </div>
-                
+
                 @php
                     $isMobileFactoriesActive = request()->routeIs('factories.*') || request()->routeIs('certificates.*');
                 @endphp
-                <a class="nav-item px-3 py-2 {{ $isMobileFactoriesActive ? 'active' : '' }}" 
-                   data-bs-toggle="collapse" 
-                   href="#mobileFactoriesCollapse" 
-                   role="button" 
-                   aria-expanded="{{ $isMobileFactoriesActive ? 'true' : 'false' }}" 
+                <a class="nav-item px-3 py-2 {{ $isMobileFactoriesActive ? 'active' : '' }}"
+                   data-bs-toggle="collapse"
+                   href="#mobileFactoriesCollapse"
+                   role="button"
+                   aria-expanded="{{ $isMobileFactoriesActive ? 'true' : 'false' }}"
                    aria-controls="mobileFactoriesCollapse">
                     <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
                         <i class="bi bi-buildings-fill fs-5"></i>
@@ -720,15 +729,32 @@
                     </div>
                     <span>Purchase Orders</span>
                 </a>
+
+
+
+
+                {{-- up --}}
+
+
+                @include('shipment_management.partials.shipment-menu', [
+                    'collapseId' => 'mobileShipmentManagementCollapse',
+                    'isMobile' => true,
+                ])
+
+
+
+
+
+
                 <!-- Master Data Dropdown (Mobile) -->
                 @php
                     $isMobileMasterDataActive = request()->is('master-data*');
                 @endphp
-                <a class="nav-item px-3 py-2 {{ $isMobileMasterDataActive ? 'active' : '' }}" 
-                   data-bs-toggle="collapse" 
-                   href="#mobileMasterDataCollapse" 
-                   role="button" 
-                   aria-expanded="{{ $isMobileMasterDataActive ? 'true' : 'false' }}" 
+                <a class="nav-item px-3 py-2 {{ $isMobileMasterDataActive ? 'active' : '' }}"
+                   data-bs-toggle="collapse"
+                   href="#mobileMasterDataCollapse"
+                   role="button"
+                   aria-expanded="{{ $isMobileMasterDataActive ? 'true' : 'false' }}"
                    aria-controls="mobileMasterDataCollapse">
                     <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
                         <i class="bi bi-database-fill-gear fs-5"></i>
@@ -834,7 +860,7 @@
                 sidebarToggleBtn.addEventListener('click', function () {
                     desktopSidebar.classList.toggle('collapsed');
                     const currentlyCollapsed = desktopSidebar.classList.contains('collapsed');
-                    
+
                     if (currentlyCollapsed) {
                         sidebarToggleIcon.classList.replace('bi-chevron-left', 'bi-chevron-right');
                     } else {
@@ -856,18 +882,18 @@
                     var method = button.getAttribute('data-method') || 'DELETE';
                     var btnText = button.getAttribute('data-btn-text') || 'Yes, Delete';
                     var btnClass = button.getAttribute('data-btn-class') || 'btn-danger';
-                    
+
                     var form = confirmModal.querySelector('#confirmForm');
                     form.action = action;
                     form.querySelector('#confirmMethod').value = method;
-                    
+
                     confirmModal.querySelector('#confirmModalMessage').textContent = message;
                     confirmModal.querySelector('#confirmModalSubmessage').textContent = submessage;
-                    
+
                     var submitBtn = confirmModal.querySelector('#confirmSubmitBtn');
                     submitBtn.textContent = btnText;
                     submitBtn.className = 'btn rounded-pill px-4 fw-bold ' + btnClass;
-                    
+
                     var hiddenInputsContainer = confirmModal.querySelector('#confirmHiddenInputs');
                     hiddenInputsContainer.innerHTML = '';
                     var inputsData = button.getAttribute('data-inputs');
