@@ -13,30 +13,13 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware('role:super_admin')->group(function () {
         Route::resource('users', \App\Http\Controllers\UserController::class);
         Route::resource('labs', \App\Http\Controllers\LabController::class);
+// custom actions
+        Route::get('shipment-management/scan', [\App\Http\Controllers\ShipmentManagementController::class, 'scan'])->name('shipment-management.scan');
+        Route::get('shipment-management/forwarder-login', [\App\Http\Controllers\ShipmentManagementController::class, 'forwarderLogin'])->name('shipment-management.forwarder-login');
+        Route::resource('shipment-management',\App\Http\Controllers\ShipmentManagementController::class);
 
 
-        // Shipment list page.
-Route::get(
-    'shipment-management',
-    [\App\Http\Controllers\ShipmentManagementController::class, 'index']
-)->name('shipment-management.index');
 
-// Create Shipment page.
-Route::get(
-    'shipment-management/create',
-    [\App\Http\Controllers\ShipmentManagementController::class, 'create']
-)->name('shipment-management.create');
-
-// Existing shipment menu pages.
-Route::get(
-    'shipment-management/scan',
-    [\App\Http\Controllers\ShipmentManagementController::class, 'scan']
-)->name('shipment-management.scan');
-
-Route::get(
-    'shipment-management/forwarder-login',
-    [\App\Http\Controllers\ShipmentManagementController::class, 'forwarderLogin']
-)->name('shipment-management.forwarder-login');
 
         Route::resource('roles', \App\Http\Controllers\RoleController::class);
         Route::get('permissions/grid', [\App\Http\Controllers\RoleController::class, 'grid'])->name('permissions.grid');
