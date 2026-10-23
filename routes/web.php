@@ -55,6 +55,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('stafford-certs/{stafford_cert}/export-pdf', [\App\Http\Controllers\StaffordQualificationController::class, 'exportPdf'])->name('stafford-certs.export-pdf');
         Route::post('stafford-certs/export-bulk-pdf', [\App\Http\Controllers\StaffordQualificationController::class, 'exportBulkPdf'])->name('stafford-certs.export-bulk-pdf');
         Route::post('stafford-certs/bulk-action', [\App\Http\Controllers\StaffordQualificationController::class, 'bulkAction'])->name('stafford-certs.bulk-action');
+        Route::post('stafford-certs/{stafford_cert}/reject', [\App\Http\Controllers\StaffordQualificationController::class, 'reject'])->name('stafford-certs.reject');
         Route::get('stafford-certs/erp-po-lookup', [\App\Http\Controllers\StaffordQualificationController::class, 'eravPoLookup'])->name('stafford-certs.erp-po-lookup');
         Route::get('stafford-certs/erp-po-search', [\App\Http\Controllers\StaffordQualificationController::class, 'eravPoSearch'])->name('stafford-certs.erp-po-search');
         Route::resource('stafford-certs', \App\Http\Controllers\StaffordQualificationController::class)
@@ -68,6 +69,8 @@ Route::middleware(['auth'])->group(function () {
             ]);
         // Test Report Types CRUD
         Route::resource('test-report-types', \App\Http\Controllers\TestReportTypeController::class);
+        // Upload report file (accessible by both super_admin and lab)
+        Route::post('stafford-certs/upload-report-file', [\App\Http\Controllers\StaffordQualificationController::class, 'uploadReportFile'])->name('stafford-certs.upload-report-file');
     });
 
     // Laboratory specific routes
@@ -101,6 +104,15 @@ Route::middleware(['auth'])->group(function () {
         Route::get('purchase-orders/{id}', [\App\Http\Controllers\PurchaseOrderController::class, 'show'])->name('purchase-orders.show');
     });
 });
+
+// Fallback route to safely stream storage files if symlink is unavailable
+Route::get('storage/{path}', function ($path) {
+    $filePath = storage_path('app/public/' . $path);
+    if (!file_exists($filePath)) {
+        abort(404);
+    }
+    return response()->file($filePath);
+})->where('path', '.*');
 
 require __DIR__.'/auth.php';
 

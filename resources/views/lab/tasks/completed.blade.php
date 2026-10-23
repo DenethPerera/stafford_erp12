@@ -59,6 +59,7 @@
                     query: '',
                     options: [
                         { value: 'all', label: 'All Sync States' },
+                        { value: 'rejected', label: 'Rejected by Admin (Needs Revision)' },
                         { value: 'synced', label: 'Synced (Locked)' },
                         { value: 'pending', label: 'Pending Sync (Editable)' },
                         { value: 'failed', label: 'Sync Failed (Editable)' }
@@ -197,6 +198,18 @@
                                             <span class="fw-semibold text-primary" x-text="task.certNo || task.certType"></span>
                                             <span x-show="task.createdAt"> &bull; <span x-text="task.createdAt"></span></span>
                                         </div>
+                                        <template x-if="task.status === 'Rejected'">
+                                            <div class="mt-1">
+                                                <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 rounded-pill px-2 py-0.5 fw-bold d-inline-flex align-items-center gap-1" style="font-size: 10px;">
+                                                    <i class="bi bi-x-circle-fill"></i> Rejected by Admin
+                                                </span>
+                                                <template x-if="task.rejectionReason">
+                                                    <div class="text-danger small mt-0.5 fw-semibold" style="font-size: 10px;" :title="task.rejectionReason">
+                                                        <i class="bi bi-chat-left-dots me-1"></i><span x-text="task.rejectionReason"></span>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
                                     </div>
                                 </div>
                             </td>
@@ -272,9 +285,11 @@
                                     </template>
                                     <template x-if="!task.isSynced">
                                         <button type="button" 
-                                                class="btn btn-sm btn-primary rounded-pill px-3 fw-bold shadow-sm d-inline-flex align-items-center gap-1"
+                                                class="btn btn-sm rounded-pill px-3 fw-bold shadow-sm d-inline-flex align-items-center gap-1"
+                                                :class="task.status === 'Rejected' ? 'btn-danger' : 'btn-primary'"
                                                 @click="openModal(task, false)">
-                                            <i class="bi bi-pencil-square"></i> Edit & Save
+                                            <i class="bi" :class="task.status === 'Rejected' ? 'bi-arrow-repeat' : 'bi-pencil-square'"></i>
+                                            <span x-text="task.status === 'Rejected' ? 'Revise & Resubmit' : 'Edit & Save'"></span>
                                         </button>
                                     </template>
 
@@ -330,6 +345,21 @@
                         <div>
                             <div class="fw-bolder text-dark">Data Immutability Notice</div>
                             <div class="small">This test report has already been synced to CPSC/ERP databases (<span class="fw-bold" x-text="currentTask.apiSyncStatus"></span>). For regulatory compliance, no modifications can be made.</div>
+                        </div>
+                    </div>
+
+                    <!-- Rejection Notice Banner -->
+                    <div x-show="form.status === 'Rejected'" class="alert alert-danger py-3 px-4 mb-4 border-0 rounded-4 d-flex align-items-start gap-3">
+                        <i class="bi bi-x-circle-fill fs-3 text-danger flex-shrink-0"></i>
+                        <div>
+                            <div class="fw-bolder text-danger">Report Rejected by Administrator</div>
+                            <template x-if="form.rejectionReason">
+                                <div class="small fw-semibold mt-1">
+                                    <span class="text-muted">Reason / Feedback:</span>
+                                    <span class="text-dark" x-text="form.rejectionReason"></span>
+                                </div>
+                            </template>
+                            <div class="small text-muted mt-1">Please review the test reports and citations below, make required revisions, and click <span class="fw-bold">Save Changes</span> to re-submit this task for approval.</div>
                         </div>
                     </div>
 
@@ -834,9 +864,11 @@
                     if (this.syncFilter === 'synced') {
                         filtered = filtered.filter(t => t.apiSyncStatus === 'synced');
                     } else if (this.syncFilter === 'pending') {
-                        filtered = filtered.filter(t => t.apiSyncStatus === 'pending' || !t.apiSyncStatus);
+                        filtered = filtered.filter(t => (t.apiSyncStatus === 'pending' || !t.apiSyncStatus) && t.status !== 'Rejected');
                     } else if (this.syncFilter === 'failed') {
                         filtered = filtered.filter(t => t.apiSyncStatus === 'failed');
+                    } else if (this.syncFilter === 'rejected') {
+                        filtered = filtered.filter(t => t.status === 'Rejected');
                     }
                 }
 
@@ -891,6 +923,7 @@
                     intendedUse: task.intendedUse || '',
                     childrenProduct: task.childrenProduct || '',
                     status: task.status || 'Complete',
+                    rejectionReason: task.rejectionReason || '',
                     productName: task.productName,
                     factoryName: task.factoryName,
                     factoryAddress: task.factoryAddress || '',
@@ -1047,6 +1080,10 @@
 
                 this.isSubmitting = true;
 
+                // When revising and re-submitting a rejected task, reset status to Complete
+                const submitStatus = (this.form.status === 'Rejected' || !this.form.status) ? 'Complete' : this.form.status;
+                this.form.status = submitStatus;
+
                 fetch(`{{ url('lab/tasks') }}/${this.form.id}`, {
                     method: 'PUT',
                     headers: {
@@ -1064,7 +1101,8 @@
                         certType: this.form.certType,
                         intendedUse: this.form.intendedUse,
                         childrenProduct: this.form.childrenProduct,
-                        status: this.form.status,
+                        status: submitStatus,
+                        rejectionReason: null,
                         manufactureDate: this.form.manufactureDate,
                         lotNumber: this.form.lotNumber,
                         productName: this.form.productName,

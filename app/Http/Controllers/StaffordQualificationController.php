@@ -18,6 +18,9 @@ class StaffordQualificationController extends Controller
             $query = StaffordQualification::orderBy('created_at', 'desc');
             if ($request->filled('status') && $request->status !== 'All') {
                 $query->where('status', $request->status);
+            } else {
+                // By default, exclude Rejected records from the main collections table
+                $query->where('status', '!=', 'Rejected');
             }
             $records = $query->get()->map(function($record) {
                 return $this->mapToCamelCase($record);
@@ -30,11 +33,23 @@ class StaffordQualificationController extends Controller
                 $season  = mb_strtolower(preg_replace('/\s+/', ' ', trim($item['season'] ?? '')));
                 return $factory . '___' . $style . '___' . $season;
             })->map(function ($group) {
-                $first = $group->first();
+                // Pick the record that has test report attachments if any exist in the group
+                $bestRecord = $group->first(function ($item) {
+                    if (empty($item['tests']) || !is_array($item['tests'])) return false;
+                    foreach ($item['tests'] as $t) {
+                        if (!empty($t['testReportFile']) || !empty($t['testReportFileUrl']) || !empty($t['testReportUrl'])) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }) ?? $group->first(function ($item) {
+                    return !empty($item['tests']) && is_array($item['tests']) && count($item['tests']) > 0;
+                }) ?? $group->first();
+
                 $allPoNumbers = $group->pluck('poNumber')->filter()->unique()->values()->all();
                 $allIds = $group->pluck('id')->values()->all();
 
-                return array_merge($first, [
+                return array_merge($bestRecord, [
                     'allPoNumbers'  => $allPoNumbers,
                     'otherPosCount' => count($allPoNumbers) - 1,
                     'allIds'        => $allIds, 
@@ -115,21 +130,40 @@ class StaffordQualificationController extends Controller
             }
 
             if (empty($data['season'])) {
-                $eravPo = \App\Models\Erav\EravPurchaseOrder::with('prodOrders')
-                    ->where('pdf_po_refno', $poNum)
+                $prodOrder = \App\Models\Erav\EravProdOrder::where('prodorder_ref', $poNum)
+                    ->where('isoffline', 0)
                     ->first();
+                if ($prodOrder && !empty($prodOrder->prod_order_season)) {
+                    $data['season'] = $prodOrder->prod_order_season;
+                } else {
+                    $eravPo = \App\Models\Erav\EravPurchaseOrder::with('prodOrders')
+                        ->where('pdf_po_refno', $poNum)
+                        ->first();
 
-                if ($eravPo) {
-                    $data['season'] = $eravPo->prodOrders->first(fn($p) => !empty($p->prod_order_season))?->prod_order_season ?? '';
+                    if ($eravPo) {
+                        $data['season'] = $eravPo->prodOrders->first(fn($p) => !empty($p->prod_order_season))?->prod_order_season ?? '';
+                    }
                 }
             }
 
 
-            // Look up existing record strictly by PO number (do NOT use $validated['id'] here)
-            $existing = StaffordQualification::withoutGlobalScopes()
-                ->where('po_number', $poNum)
-                ->latest('id')
-                ->first();
+            // Look up existing record by PO number AND Style No (and season if present)
+            $existingQuery = StaffordQualification::withoutGlobalScopes()
+                ->where('po_number', $poNum);
+
+            if (!empty($data['style_no'])) {
+                $existingQuery->where('style_no', $data['style_no']);
+            }
+
+            if (!empty($data['season'])) {
+                $existingQuery->where(function ($q) use ($data) {
+                    $q->where('season', $data['season'])
+                      ->orWhereNull('season')
+                      ->orWhere('season', '');
+                });
+            }
+
+            $existing = $existingQuery->latest('id')->first();
 
             if ($existing) {
                 // Guard: If another lab submitted this record, do not overwrite
@@ -192,12 +226,73 @@ class StaffordQualificationController extends Controller
             StaffordQualification::whereIn('id', $ids)->update(['status' => 'Complete']);
         } elseif ($action === 'incomplete') {
             StaffordQualification::whereIn('id', $ids)->update(['status' => 'Incomplete']);
+        } elseif ($action === 'reject') {
+            $reason = trim($request->input('reason', ''));
+            $hasCols = \Illuminate\Support\Facades\Schema::hasColumn('stafford_qualifications', 'rejection_reason');
+            $records = StaffordQualification::whereIn('id', $ids)->get();
+            foreach ($records as $rec) {
+                $rec->status = 'Rejected';
+                if ($hasCols) {
+                    $rec->rejection_reason = $reason ?: null;
+                    $rec->rejected_at = now();
+                    $rec->rejected_by = auth()->id();
+                }
+                $rec->api_sync_status = 'pending';
+                $rec->save();
+            }
+            return response()->json(['message' => 'Selected record(s) rejected successfully']);
         } elseif ($action === 'sync-cpsc') {
             \App\Jobs\SyncCertificatesToCPSC::dispatch($ids);
             return response()->json(['message' => 'CPSC Sync Job dispatched successfully']);
         }
 
         return response()->json(['message' => 'Bulk action completed successfully']);
+    }
+
+    /**
+     * Reject a qualification report and return it to the laboratory.
+     */
+    public function reject(Request $request, $id)
+    {
+        $qualification = StaffordQualification::withoutGlobalScopes()->findOrFail($id);
+        $reason = trim($request->input('reason', ''));
+
+        // Target all records in the same group (Factory + Style + Season)
+        $query = StaffordQualification::withoutGlobalScopes()
+            ->where('factory_name', $qualification->factory_name)
+            ->where('style_no', $qualification->style_no);
+
+        if (!empty($qualification->season)) {
+            $query->where('season', $qualification->season);
+        } else {
+            $query->where(function ($q) {
+                $q->whereNull('season')->orWhere('season', '');
+            });
+        }
+
+        $records = $query->get();
+        if ($records->isEmpty()) {
+            $records = collect([$qualification]);
+        }
+
+        $hasCols = \Illuminate\Support\Facades\Schema::hasColumn('stafford_qualifications', 'rejection_reason');
+
+        foreach ($records as $rec) {
+            $rec->status = 'Rejected';
+            if ($hasCols) {
+                $rec->rejection_reason = $reason ?: null;
+                $rec->rejected_at = now();
+                $rec->rejected_by = auth()->id();
+            }
+            // Unlock sync so laboratory can edit and resubmit
+            $rec->api_sync_status = 'pending';
+            $rec->save();
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Record rejected successfully (" . $records->count() . " PO(s) returned to laboratory).",
+        ]);
     }
 
     public function update(Request $request, $id)
@@ -224,6 +319,15 @@ class StaffordQualificationController extends Controller
 
         $validated = $this->validateCamelCase($request);
         $data = $this->mapToSnakeCase($validated);
+
+        // If updating a previously rejected task, reset status to Complete and clear rejection reason
+        if ($staffordQualification->status === 'Rejected' || empty($data['status']) || $data['status'] === 'Rejected') {
+            $data['status'] = 'Complete';
+            if (\Illuminate\Support\Facades\Schema::hasColumn('stafford_qualifications', 'rejection_reason')) {
+                $data['rejection_reason'] = null;
+            }
+        }
+
         $data = $this->preserveExistingData($data, $staffordQualification);
 
         $staffordQualification->update($data);
@@ -660,6 +764,7 @@ class StaffordQualificationController extends Controller
             'poc_postal_code' => $pocPostal,
             'poc_phone' => $pocPhone,
             'poc_email' => $pocEmail,
+            'rejection_reason' => $data['rejectionReason'] ?? null,
         ];
     }
 
@@ -738,6 +843,8 @@ class StaffordQualificationController extends Controller
             'pocEmail' => $record->poc_email,
             'apiSyncStatus' => $record->api_sync_status,
             'apiSyncMessage' => $record->api_sync_message,
+            'rejectionReason' => $record->rejection_reason ?? null,
+            'rejectedAt' => $record->rejected_at ? \Carbon\Carbon::parse($record->rejected_at)->format('M d, Y H:i') : null,
             'labId' => $record->lab_id,
             'assignedLabName' => $record->lab?->name,
         ];
@@ -755,6 +862,28 @@ class StaffordQualificationController extends Controller
         $qualification = $service->fetchPoAndAssignToLab('', $lab->id);
 
         return redirect()->route('stafford-certs.index')->with('success', "Real ERP PO #{$qualification->po_number} imported and assigned to Lab: {$lab->name}");
+    }
+
+    /**
+     * Upload a test report document file (PDF, image, Word) — accessible by super_admin.
+     */
+    public function uploadReportFile(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|max:20480|mimes:pdf,doc,docx,jpg,jpeg,png,webp,xls,xlsx',
+        ]);
+
+        $file = $request->file('file');
+        $originalName = $file->getClientOriginalName();
+        $path = $file->store('lab_reports', 'public');
+        $url = asset('storage/' . $path);
+
+        return response()->json([
+            'success'   => true,
+            'file_path' => $path,
+            'file_name' => $originalName,
+            'file_url'  => $url,
+        ]);
     }
 
     public function eravPoLookup(Request $request, \App\Services\ApiIntegrationService $service)
@@ -776,29 +905,32 @@ class StaffordQualificationController extends Controller
     public function eravPoSearch(Request $request, \App\Services\ApiIntegrationService $service)
     {
         $term = trim($request->query('q', ''));
-        $query = \App\Models\Erav\EravPurchaseOrder::query()
-            ->whereNotNull('pdf_po_refno')
-            ->where('pdf_po_refno', '!=', '')
-            ->has('items');
+        $query = \App\Models\Erav\EravProdOrder::query()
+            ->whereNotNull('prodorder_ref')
+            ->where('prodorder_ref', '!=', '')
+            ->where('prodorder_ref', '!=', '-')
+            ->where('isoffline', 0)
+            ->whereHas('purchaseOrder.items');
 
         if ($term) {
             $query->where(function($q) use ($term) {
-                $q->where('pdf_po_refno', 'like', "%{$term}%")
-                  ->orWhere('customer_name', 'like', "%{$term}%")
-                  ->orWhereHas('items', function($sub) use ($term) {
-                      $sub->where('item_styleno', 'like', "%{$term}%")
-                          ->orWhere('item_description', 'like', "%{$term}%");
+                $q->where('prodorder_ref', 'like', "%{$term}%")
+                  ->orWhereHas('purchaseOrder', function($poQuery) use ($term) {
+                      $poQuery->where('customer_name', 'like', "%{$term}%")
+                          ->orWhereHas('items', function($sub) use ($term) {
+                              $sub->where('item_styleno', 'like', "%{$term}%")
+                                  ->orWhere('item_description', 'like', "%{$term}%");
+                          });
                   });
             });
         }
 
-        $poList = $query->with(['items:id,porder_pdf_list_id,item_styleno,item_description'])
-                     ->select(['id', 'pdf_po_refno', 'porder_date', 'customer_name'])
-                     ->orderBy('id', 'desc')
+        $poList = $query->with(['purchaseOrder.items:id,porder_pdf_list_id,item_styleno,item_description', 'purchaseOrder:id,customer_name,porder_date'])
+                     ->orderBy('prodorder_id', 'desc')
                      ->limit(35)
                      ->get();
 
-        $poRefs = $poList->pluck('pdf_po_refno')->filter()->toArray();
+        $poRefs = $poList->pluck('prodorder_ref')->filter()->toArray();
         $qualifications = StaffordQualification::withoutGlobalScopes()
             ->with('lab')
             ->whereIn('po_number', $poRefs)
@@ -808,14 +940,14 @@ class StaffordQualificationController extends Controller
             ->keyBy('po_number');
 
         $results = $poList->map(function($po) use ($qualifications) {
-            $firstItem = $po->items->first();
-            $qual = $qualifications->get($po->pdf_po_refno);
+            $firstItem = $po->purchaseOrder?->items?->first();
+            $qual = $qualifications->get($po->prodorder_ref);
             $hasLabTests = !empty($qual);
             return [
-                'id'          => $po->id,
-                'poNumber'    => $po->pdf_po_refno,
-                'poDate'      => $po->porder_date,
-                'buyer'       => $po->customer_name,
+                'id'          => $po->prodorder_id,
+                'poNumber'    => $po->prodorder_ref,
+                'poDate'      => $po->prodorder_date ?: $po->purchaseOrder?->porder_date,
+                'buyer'       => $po->purchaseOrder?->customer_name,
                 'style'       => $firstItem?->item_styleno ?? '',
                 'product'     => $firstItem?->item_description ?? '',
                 'hasLabTests' => $hasLabTests,
