@@ -3,6 +3,10 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\Factory;
+use App\Models\Country;
+
+use App\Models\Erav\EravPurchaseOrder;
 
 class ShipmentManagementController extends Controller
 {
@@ -21,7 +25,24 @@ class ShipmentManagementController extends Controller
     public function create()
     {
         //
-        return view('shipment_management.create');
+        // return view('shipment_management.create');
+        $factories = Factory::orderBy('name')
+        ->pluck('name', 'id');
+
+
+
+        $countries = Country::query()
+        ->whereNotNull('country')
+        ->whereNotNull('country_code')
+        ->where('country', '!=', '')
+        ->where('country_code', '!=', '')
+        ->orderBy('country')
+        ->pluck('country', 'country_code');
+
+         return view('shipment_management.create', compact('factories','countries'));
+
+
+
     }
 
     /**

@@ -18,42 +18,32 @@
 
 
 @php
+// Country dropdown options.
+// $countries = [
+//     'LK' => 'Sri Lanka',
+//     'BD' => 'Bangladesh',
+//     'CN' => 'China',
+//     'IN' => 'India',
+//     'ID' => 'Indonesia',
+//     'MY' => 'Malaysia',
+//     'PK' => 'Pakistan',
+//     'SG' => 'Singapore',
+//     'TH' => 'Thailand',
+//     'TR' => 'Turkey',
+//     'AE' => 'United Arab Emirates',
+//     'GB' => 'United Kingdom',
+//     'US' => 'United States',
+//     'VN' => 'Vietnam',
+// ];
     // Factory dropdown options.
-    $factories = [
-        'factory-1' => 'Colombo Apparel Factory',
-        'factory-2' => 'Kandy Garment Factory',
-        'factory-3' => 'Galle Manufacturing',
-        'factory-4' => 'Negombo Textile Factory',
-    ];
+    // $factories = [
+    //     'factory-1' => 'Colombo Apparel Factory',
+    //     'factory-2' => 'Kandy Garment Factory',
+    //     'factory-3' => 'Galle Manufacturing',
+    //     'factory-4' => 'Negombo Textile Factory',
+    // ];
 
-    // Sample already created shipments.
-    $shipments = [
-        [
-            'shipment_id' => 'SHP-001',
-            'shipment_type' => 'Individual Shipment',
-            'factories' => [
-                'Colombo Apparel Factory',
-            ],
-            'status' => 'Draft',
-        ],
-        [
-            'shipment_id' => 'SHP-002',
-            'shipment_type' => 'Consolidated Shipment',
-            'factories' => [
-                'Kandy Garment Factory',
-                'Galle Manufacturing',
-            ],
-            'status' => 'Draft',
-        ],
-        [
-            'shipment_id' => 'SHP-003',
-            'shipment_type' => 'Individual Shipment',
-            'factories' => [
-                'Negombo Textile Factory',
-            ],
-            'status' => 'Draft',
-        ],
-    ];
+
 @endphp
 
 
@@ -168,6 +158,9 @@
     }
 </style>
 
+
+
+
 <div class="shipment-details">
 
     <h2>Shipment Details</h2>
@@ -175,20 +168,142 @@
 
     <form id="shipment-form" novalidate>
 
-        {{-- Shipment ID --}}
-        <div class="mb-4">
-            <label for="shipment-id" class="form-label mb-2">
-                Shipment ID
-            </label>
+        {{-- Country of Origin and Buyer ID --}}
+<div class="row g-4 mb-4">
 
+    <div class="col-md-6">
+        <label for="country-of-origin" class="form-label mb-2">
+            Country of Origin <span class="text-danger">*</span>
+        </label>
+
+        {{-- <select
+            id="country-of-origin"
+            name="country_of_origin"
+            class="form-select"
+            required
+        >
+            @foreach($countries as $code => $name)
+                <option value="{{ $code }}">
+                    {{ $name }} ({{ $code }})
+                </option>
+            @endforeach
+        </select> --}}
+        <select
+    id="country-of-origin"
+    name="country_of_origin"
+    class="form-select"
+    required
+>
+    <option value="">Select a country</option>
+
+    @foreach($countries as $code => $name)
+        <option
+            value="{{ $code }}"
+            @selected(old('country_of_origin') === (string) $code)
+        >
+            {{ $name }} ({{ $code }})
+        </option>
+    @endforeach
+</select>
+    </div>
+
+    <div class="col-md-6">
+        <label for="buyer-id" class="form-label mb-2">
+            Buyer ID
+        </label>
+
+        <input
+            id="buyer-id"
+            name="buyer_id"
+            type="text"
+            class="form-control"
+            placeholder="Enter Buyer ID"
+        >
+    </div>
+
+</div>
+
+{{-- Shipment ID mode --}}
+<fieldset class="mb-3">
+    <legend class="mb-3">Shipment ID Option</legend>
+
+    <div class="d-flex flex-wrap gap-3">
+
+        <div class="form-check">
             <input
-                id="shipment-id"
-                type="text"
-                class="form-control bg-light"
-                value="Generated later"
-                readonly
+                id="manual-id"
+                type="radio"
+                name="shipment_id_mode"
+                value="manual"
+                class="form-check-input"
             >
+
+            <label for="manual-id" class="form-check-label">
+                Manual Entry
+            </label>
         </div>
+
+        <div class="form-check">
+            <input
+                id="auto-id"
+                type="radio"
+                name="shipment_id_mode"
+                value="auto"
+                class="form-check-input"
+                checked
+            >
+
+            <label for="auto-id" class="form-check-label">
+                Auto Generate
+            </label>
+        </div>
+
+    </div>
+</fieldset>
+
+{{-- Shipment ID --}}
+<div class="mb-4">
+    <label for="shipment-id" class="form-label mb-2">
+        Shipment ID <span class="text-danger">*</span>
+    </label>
+
+    <input
+        id="shipment-id"
+        name="shipment_id"
+        type="text"
+        class="form-control bg-light"
+        value="LK-000001"
+        placeholder="Enter Shipment ID"
+        aria-describedby="shipment-id-help"
+        readonly
+        required
+    >
+
+    <div
+        id="shipment-id-help"
+        class="form-text"
+        aria-live="polite"
+    >
+        Sample ID preview. The prefix follows the selected country.
+    </div>
+</div>
+
+{{-- Purchase Order ID --}}
+<div class="mb-4">
+    <label for="purchase-order-id" class="form-label mb-2">
+        Purchase Order ID
+    </label>
+
+    <input
+        id="purchase-order-id"
+        name="purchase_order_id"
+        type="text"
+        class="form-control"
+        placeholder="Enter Purchase Order ID"
+    >
+</div>
+
+
 
         {{-- Shipment Type --}}
         <fieldset class="mb-4">
@@ -340,88 +455,64 @@
 
 </div>
 
-{{-- Already Created Shipments --}}
-<div class="shipment-details mt-4">
-
-    <h2 class="mb-2">Already Created Shipments</h2>
-
-
-
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-
-            <thead class="table-light">
-                <tr>
-                    <th scope="col" class="text-nowrap">
-                        Shipment ID
-                    </th>
-
-                    <th scope="col" class="text-nowrap">
-                        Shipment Type
-                    </th>
-
-                    <th scope="col">
-                        Factories
-                    </th>
-
-                    <th scope="col">
-                        Status
-                    </th>
-                </tr>
-            </thead>
-
-            <tbody>
-
-                @if(count($shipments) > 0)
-
-                    @foreach($shipments as $shipment)
-                        <tr>
-                            <td class="fw-semibold text-nowrap">
-                                {{ $shipment['shipment_id'] }}
-                            </td>
-
-                            <td class="text-nowrap">
-                                {{ $shipment['shipment_type'] }}
-                            </td>
-
-                            <td>
-                                @foreach($shipment['factories'] as $factory)
-                                    <div class="py-1">
-                                        {{ $factory }}
-                                    </div>
-                                @endforeach
-                            </td>
-
-                            <td>
-                                <span class="badge rounded-pill bg-secondary">
-                                    {{ $shipment['status'] }}
-                                </span>
-                            </td>
-                        </tr>
-                    @endforeach
-
-                @else
-
-                    <tr>
-                        <td colspan="4" class="text-center text-muted py-4">
-                            No shipments found.
-                        </td>
-                    </tr>
-
-                @endif
-
-            </tbody>
-        </table>
-    </div>
 
 @endsection
 
 @push('scripts')
 <script>
+
+
+
+
 document.addEventListener('DOMContentLoaded', function () {
+
 
     // Get the elements used by this page.
     const shipmentForm = document.getElementById('shipment-form');
+
+    // Get the new form elements.
+    const countrySelect = document.getElementById('country-of-origin');
+    const manualIdRadio = document.getElementById('manual-id');
+    const autoIdRadio = document.getElementById('auto-id');
+    const shipmentId = document.getElementById('shipment-id');
+    const shipmentIdHelp = document.getElementById('shipment-id-help');
+
+    // Sample sequence for the UI demonstration.
+    const sampleSequence = '000001';
+
+    // Remember the user's manual ID when switching modes.
+    let manualShipmentId = '';
+
+
+    // Update the generated ID when the country changes.
+function updateGeneratedShipmentId() {
+    if (autoIdRadio.checked) {
+        const countryCode = countrySelect.value;
+        // shipmentId.value = countrySelect.value + '-' + sampleSequence;
+         shipmentId.value = countryCode? countryCode + '-' + sampleSequence: '';
+    }
+}
+
+// Switch between Manual Entry and Auto Generate.
+function changeShipmentIdMode() {
+    if (autoIdRadio.checked) {
+        shipmentId.readOnly = true;
+        shipmentId.classList.add('bg-light');
+
+        shipmentIdHelp.textContent =
+            'Shipment ID will be generated automatically.';
+
+        updateGeneratedShipmentId();
+    } else {
+        shipmentId.readOnly = false;
+        shipmentId.classList.remove('bg-light');
+
+        shipmentId.value = manualShipmentId;
+
+        shipmentIdHelp.textContent =
+            'Enter your Shipment ID manually.';
+    }
+}
 
     const individualRadio = document.getElementById('individual');
     const consolidatedRadio = document.getElementById('consolidated');
@@ -435,6 +526,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const factoryError = document.getElementById('factory-error');
 
     const factoryCheckboxes = document.querySelectorAll('.factory-checkbox');
+
 
 
     // Count the selected factories.
@@ -553,12 +645,29 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
     // Restore default values after Reset is clicked.
-    function resetShipment() {
-        // Wait for the browser to finish resetting the form.
-        setTimeout(function () {
-            changeShipmentType();
-        }, 0);
+function resetShipment() {
+    // Wait until the browser finishes resetting the fields.
+    setTimeout(function () {
+        manualShipmentId = '';
+
+        changeShipmentIdMode();
+        changeShipmentType();
+    }, 0);
+}
+
+    // Update the generated prefix when the country changes.
+countrySelect.addEventListener('change', updateGeneratedShipmentId);
+
+// Change the Shipment ID mode.
+manualIdRadio.addEventListener('change', changeShipmentIdMode);
+autoIdRadio.addEventListener('change', changeShipmentIdMode);
+
+// Remember the manually entered ID.
+shipmentId.addEventListener('input', function () {
+    if (manualIdRadio.checked) {
+        manualShipmentId = shipmentId.value;
     }
+});
 
 
     // Listen for shipment type changes.
@@ -579,6 +688,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Set up the initial page state.
     changeShipmentType();
+    changeShipmentIdMode();
 
 });
 </script>
