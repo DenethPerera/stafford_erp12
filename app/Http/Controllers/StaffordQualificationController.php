@@ -876,13 +876,68 @@ class StaffordQualificationController extends Controller
         $file = $request->file('file');
         $originalName = $file->getClientOriginalName();
         $path = $file->store('lab_reports', 'public');
-        $url = asset('storage/' . $path);
+        $url = route('stafford-certs.view-report-file', ['file' => $path]);
 
         return response()->json([
             'success'   => true,
             'file_path' => $path,
             'file_name' => $originalName,
             'file_url'  => $url,
+        ]);
+    }
+
+    /**
+     * Safely view or stream a test report document file without relying on web server symlinks.
+     */
+    public function viewReportFile(Request $request)
+    {
+        $file = $request->query('file');
+        if (!$file) {
+            abort(404, 'No test report file specified.');
+        }
+
+        // Clean and sanitize the path to prevent directory traversal
+        $cleanPath = str_replace(['..', '\\'], ['', '/'], $file);
+        $cleanPath = ltrim($cleanPath, '/');
+        if (str_starts_with($cleanPath, 'storage/')) {
+            $cleanPath = substr($cleanPath, 8);
+        }
+
+        $candidates = [
+            storage_path('app/public/' . $cleanPath),
+            storage_path('app/public/lab_reports/' . basename($cleanPath)),
+            storage_path('app/' . $cleanPath),
+            public_path('storage/' . $cleanPath),
+        ];
+
+        $filePath = null;
+        foreach ($candidates as $candidate) {
+            if (file_exists($candidate) && is_file($candidate)) {
+                $filePath = $candidate;
+                break;
+            }
+        }
+
+        if (!$filePath) {
+            return response()->make(
+                '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 600px; margin: 60px auto; padding: 30px; border: 1px solid #fee2e2; border-radius: 12px; background: #fff5f5; text-align: center;">' .
+                '<div style="font-size: 40px; margin-bottom: 12px;">📄⚠️</div>' .
+                '<h2 style="color: #991b1b; margin-top: 0; font-size: 20px;">Report File Not Found on Server</h2>' .
+                '<p style="color: #4b5563; font-size: 14px; line-height: 1.5;">The requested document file <code>' . htmlspecialchars(basename($cleanPath)) . '</code> was not found in the server storage directory (<code>storage/app/public/lab_reports/</code>).</p>' .
+                '<p style="color: #6b7280; font-size: 13px; line-height: 1.5;">If this record was uploaded during local testing or development, please ensure the file has been copied to the server storage directory or re-uploaded via the edit form.</p>' .
+                '</div>',
+                404,
+                ['Content-Type' => 'text/html']
+            );
+        }
+
+        $mimeType = mime_content_type($filePath) ?: 'application/octet-stream';
+        $fileName = basename($filePath);
+
+        return response()->file($filePath, [
+            'Content-Type' => $mimeType,
+            'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+            'Cache-Control' => 'no-cache, private',
         ]);
     }
 

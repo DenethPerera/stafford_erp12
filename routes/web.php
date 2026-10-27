@@ -52,6 +52,7 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('factories', \App\Http\Controllers\FactoryController::class);
         
         // Stafford CRUD Routes
+        Route::get('stafford-certs/report-file', [\App\Http\Controllers\StaffordQualificationController::class, 'viewReportFile'])->name('stafford-certs.view-report-file');
         Route::get('stafford-certs/{stafford_cert}/export-pdf', [\App\Http\Controllers\StaffordQualificationController::class, 'exportPdf'])->name('stafford-certs.export-pdf');
         Route::post('stafford-certs/export-bulk-pdf', [\App\Http\Controllers\StaffordQualificationController::class, 'exportBulkPdf'])->name('stafford-certs.export-bulk-pdf');
         Route::post('stafford-certs/bulk-action', [\App\Http\Controllers\StaffordQualificationController::class, 'bulkAction'])->name('stafford-certs.bulk-action');
@@ -107,11 +108,33 @@ Route::middleware(['auth'])->group(function () {
 
 // Fallback route to safely stream storage files if symlink is unavailable
 Route::get('storage/{path}', function ($path) {
-    $filePath = storage_path('app/public/' . $path);
-    if (!file_exists($filePath)) {
-        abort(404);
+    $cleanPath = str_replace(['..', '\\'], ['', '/'], $path);
+    $cleanPath = ltrim($cleanPath, '/');
+
+    $candidates = [
+        storage_path('app/public/' . $cleanPath),
+        storage_path('app/public/lab_reports/' . basename($cleanPath)),
+        storage_path('app/' . $cleanPath),
+        public_path('storage/' . $cleanPath),
+    ];
+
+    $filePath = null;
+    foreach ($candidates as $candidate) {
+        if (file_exists($candidate) && is_file($candidate)) {
+            $filePath = $candidate;
+            break;
+        }
     }
-    return response()->file($filePath);
+
+    if (!$filePath) {
+        abort(404, 'File not found in storage: ' . htmlspecialchars(basename($cleanPath)));
+    }
+
+    $mimeType = mime_content_type($filePath) ?: 'application/octet-stream';
+    return response()->file($filePath, [
+        'Content-Type' => $mimeType,
+        'Content-Disposition' => 'inline; filename="' . basename($filePath) . '"',
+    ]);
 })->where('path', '.*');
 
 require __DIR__.'/auth.php';

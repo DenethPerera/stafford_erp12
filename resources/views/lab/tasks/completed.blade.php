@@ -242,7 +242,7 @@
                                         </div>
                                         <template x-if="task.tests[0].testReportFile">
                                             <div class="mt-1">
-                                                <a :href="task.tests[0].testReportFileUrl || ('/storage/' + task.tests[0].testReportFile)" 
+                                                <a :href="getTestFileUrl(task.tests[0])" 
                                                    target="_blank" 
                                                    class="badge bg-light text-primary border border-primary border-opacity-25 text-decoration-none d-inline-flex align-items-center gap-1"
                                                    style="font-size: 10px;">
@@ -630,7 +630,7 @@
                                             <div class="d-flex align-items-center justify-content-between p-2 rounded-3 bg-light border border-success border-opacity-25">
                                                 <div class="d-flex align-items-center gap-2 overflow-hidden">
                                                     <i class="bi bi-file-earmark-check-fill text-success fs-5"></i>
-                                                    <a :href="test.testReportFileUrl || ('/storage/' + test.testReportFile)" target="_blank" class="fw-bold small text-dark text-truncate text-decoration-none" style="max-width: 140px;" x-text="test.testReportFileName || 'Uploaded Report File'"></a>
+                                                    <a :href="getTestFileUrl(test)" target="_blank" class="fw-bold small text-dark text-truncate text-decoration-none" style="max-width: 140px;" x-text="test.testReportFileName || 'Uploaded Report File'"></a>
                                                 </div>
                                                 <button type="button" x-show="!isReadOnly" @click="removeTestFile(index)" class="btn btn-sm btn-link text-danger p-0 border-0 ms-2 text-decoration-none" title="Remove attachment">
                                                     <i class="bi bi-trash3-fill"></i>
@@ -1070,6 +1070,34 @@
                 test.testReportFile = '';
                 test.testReportFileName = '';
                 test.testReportFileUrl = '';
+            },
+
+            getTestFileUrl(test) {
+                if (!test) return '';
+                if (test.testReportFile) {
+                    const cleanPath = String(test.testReportFile).replace(/^\/+/, '');
+                    return '{{ route('stafford-certs.view-report-file') }}?file=' + encodeURIComponent(cleanPath);
+                }
+                if (test.testReportFileUrl) {
+                    const str = String(test.testReportFileUrl);
+                    if (str.includes('stafford-certs/report-file')) {
+                        return str;
+                    }
+                    const storageIdx = str.indexOf('storage/');
+                    if (storageIdx !== -1) {
+                        const relPath = str.substring(storageIdx + 8).replace(/^\/+/, '');
+                        return '{{ route('stafford-certs.view-report-file') }}?file=' + encodeURIComponent(relPath);
+                    }
+                    return str;
+                }
+                if (test.testReportUrl) {
+                    let u = String(test.testReportUrl).trim();
+                    if (u && !u.match(/^[a-zA-Z]+:\/\//) && !u.startsWith('/')) {
+                        u = 'https://' + u;
+                    }
+                    return u;
+                }
+                return '';
             },
 
             saveTask() {

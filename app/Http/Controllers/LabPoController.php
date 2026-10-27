@@ -357,8 +357,8 @@ class LabPoController extends Controller
                     'apiSyncStatus'    => $record->api_sync_status ?: 'pending',
                     'apiSyncMessage'   => $record->api_sync_message,
                     'rejectionReason'  => $record->rejection_reason ?? null,
-                    'rejectedAt'       => $record->rejected_at ? $record->rejected_at->format('M d, Y H:i') : null,
-                    'createdAt'        => $record->created_at?->format('M d, Y H:i'),
+                    'rejectedAt'       => $record->rejected_at ? \Carbon\Carbon::parse($record->rejected_at)->format('M d, Y H:i') : null,
+                    'createdAt'        => $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('M d, Y H:i') : null,
                     'isSynced'         => ($record->api_sync_status === 'synced'),
                 ];
             });
@@ -467,7 +467,7 @@ class LabPoController extends Controller
         $file = $request->file('file');
         $originalName = $file->getClientOriginalName();
         $path = $file->store('lab_reports', 'public');
-        $url = asset('storage/' . $path);
+        $url = route('stafford-certs.view-report-file', ['file' => $path]);
 
         return response()->json([
             'success'   => true,

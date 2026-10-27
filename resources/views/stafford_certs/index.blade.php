@@ -599,7 +599,7 @@
                                                 <div x-show="test.testReportUrl"><span class="fw-bold">URL:</span> <a :href="test.testReportUrl" class="text-primary text-decoration-none" target="_blank">Link</a></div>
                                                 <div x-show="test.testReportFile" class="mt-1">
                                                     <span class="fw-bold">Attachment:</span> 
-                                                    <a :href="test.testReportFileUrl || ('/storage/' + test.testReportFile)" target="_blank" class="badge bg-light text-primary border border-primary border-opacity-25 text-decoration-none d-inline-flex align-items-center gap-1">
+                                                    <a :href="getTestFileUrl(test)" target="_blank" class="badge bg-light text-primary border border-primary border-opacity-25 text-decoration-none d-inline-flex align-items-center gap-1">
                                                         <i class="bi bi-paperclip"></i>
                                                         <span x-text="test.testReportFileName || 'View File'"></span>
                                                     </a>
@@ -1058,7 +1058,7 @@
 
                                             {{-- Show existing attachment with option to replace --}}
                                             <div x-show="test.testReportFile">
-                                                <a :href="test.testReportFileUrl || ('/storage/' + test.testReportFile)"
+                                                <a :href="getTestFileUrl(test)"
                                                    target="_blank"
                                                    class="badge bg-light text-primary border border-primary border-opacity-25 text-decoration-none d-inline-flex align-items-center gap-1 p-2 w-100 text-truncate mb-2"
                                                    :title="test.testReportFileName">
@@ -2129,29 +2129,45 @@
                 document.body.classList.remove('modal-open');
             },
 
+            getTestFileUrl(test) {
+                if (!test) return '';
+                if (test.testReportFile) {
+                    const cleanPath = String(test.testReportFile).replace(/^\/+/, '');
+                    return '{{ route('stafford-certs.view-report-file') }}?file=' + encodeURIComponent(cleanPath);
+                }
+                if (test.testReportFileUrl) {
+                    const str = String(test.testReportFileUrl);
+                    if (str.includes('stafford-certs/report-file')) {
+                        return str;
+                    }
+                    const storageIdx = str.indexOf('storage/');
+                    if (storageIdx !== -1) {
+                        const relPath = str.substring(storageIdx + 8).replace(/^\/+/, '');
+                        return '{{ route('stafford-certs.view-report-file') }}?file=' + encodeURIComponent(relPath);
+                    }
+                    return str;
+                }
+                if (test.testReportUrl) {
+                    let u = String(test.testReportUrl).trim();
+                    if (u && !u.match(/^[a-zA-Z]+:\/\//) && !u.startsWith('/')) {
+                        u = 'https://' + u;
+                    }
+                    return u;
+                }
+                return '';
+            },
+
             viewAttachment(test, record) {
                 this.selectedRecordForAttachment = record;
-                let url = '';
-                if (test.testReportFile) {
-                    url = '/storage/' + test.testReportFile.replace(/^\/+/, '');
-                } else if (test.testReportFileUrl) {
-                    const storageIdx = test.testReportFileUrl.indexOf('/storage/');
-                    if (storageIdx !== -1) {
-                        url = test.testReportFileUrl.substring(storageIdx);
-                    } else {
-                        url = test.testReportFileUrl;
-                    }
-                } else if (test.testReportUrl) {
-                    url = String(test.testReportUrl).trim();
-                    if (url && !url.match(/^[a-zA-Z]+:\/\//) && !url.startsWith('/')) {
-                        url = 'https://' + url;
-                    }
-                }
+                const url = this.getTestFileUrl(test);
+                const fileName = test.testReportFileName 
+                    || (test.testReportFile ? test.testReportFile.split('/').pop() : '') 
+                    || (url && url.includes('file=') ? decodeURIComponent(url.split('file=').pop().split('&')[0]).split('/').pop() : '')
+                    || (url ? url.split('/').pop() : '');
 
-                const fileName = test.testReportFileName || (test.testReportFile ? test.testReportFile.split('/').pop() : '') || (url ? url.split('/').pop() : '');
-                const cleanUrl = (url || '').toLowerCase().split('?')[0];
-                const isPdf = cleanUrl.endsWith('.pdf') || (url || '').includes('.pdf');
-                const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(cleanUrl);
+                const cleanName = (fileName || test.testReportFile || url || '').toLowerCase().split('?')[0];
+                const isPdf = cleanName.endsWith('.pdf') || (url || '').toLowerCase().includes('.pdf');
+                const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(cleanName);
 
                 this.attachmentData = {
                     title: (record.styleNo ? record.styleNo + ' - ' : '') + (record.productName || 'Test Report'),
