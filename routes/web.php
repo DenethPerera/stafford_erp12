@@ -9,20 +9,28 @@ Route::get('/', function () {
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard');
 
+
     Route::middleware('role:super_admin')->group(function () {
         Route::resource('users', \App\Http\Controllers\UserController::class);
         Route::resource('labs', \App\Http\Controllers\LabController::class);
-        
+// custom actions
+        Route::get('shipment-management/scan', [\App\Http\Controllers\ShipmentManagementController::class, 'scan'])->name('shipment-management.scan');
+        Route::get('shipment-management/forwarder-login', [\App\Http\Controllers\ShipmentManagementController::class, 'forwarderLogin'])->name('shipment-management.forwarder-login');
+        Route::resource('shipment-management',\App\Http\Controllers\ShipmentManagementController::class);
+
+
+
+
         Route::resource('roles', \App\Http\Controllers\RoleController::class);
         Route::get('permissions/grid', [\App\Http\Controllers\RoleController::class, 'grid'])->name('permissions.grid');
         Route::post('permissions/assign', [\App\Http\Controllers\RoleController::class, 'assignPrivileges'])->name('permissions.assign');
         Route::post('permissions/revoke', [\App\Http\Controllers\RoleController::class, 'revokePrivileges'])->name('permissions.revoke');
         Route::resource('cpsc-tokens', \App\Http\Controllers\CpscTokenController::class)->only(['index', 'store', 'destroy']);
-        
+
         Route::get('activity-logs', [\App\Http\Controllers\ActivityLogController::class, 'index'])->name('activity-logs.index');
         Route::resource('standards', \App\Http\Controllers\StandardController::class);
         Route::resource('standard-stages', \App\Http\Controllers\StandardStageController::class);
-        
+
         Route::resource('certificates', \App\Http\Controllers\CertificateController::class)->except(['index']);
         Route::post('certificates/{certificate}/renewals', [\App\Http\Controllers\RenewalProcessController::class, 'store'])->name('renewals.store');
         Route::post('renewals/{renewal}/stage', [\App\Http\Controllers\RenewalProcessController::class, 'updateStage'])->name('renewals.update_stage');
@@ -36,12 +44,12 @@ Route::middleware(['auth'])->group(function () {
             Route::resource('seasons', \App\Http\Controllers\SeasonController::class);
         });
     });
-    
-    
+
+
     // Production Orders redirect based on role
     Route::middleware('role:super_admin|factory')->group(function () {
         Route::get('prod-orders', function () {
-            return auth()->user()?->isFactory() 
+            return auth()->user()?->isFactory()
                 ? redirect()->route('factory-portal.index')
                 : redirect()->route('purchase-orders.index');
         })->name('prod-orders.index');
@@ -50,7 +58,7 @@ Route::middleware(['auth'])->group(function () {
     // Routes shared between super_admin and lab
     Route::middleware('role:super_admin|lab')->group(function () {
         Route::resource('factories', \App\Http\Controllers\FactoryController::class);
-        
+
         // Stafford CRUD Routes
         Route::get('stafford-certs/report-file', [\App\Http\Controllers\StaffordQualificationController::class, 'viewReportFile'])->name('stafford-certs.view-report-file');
         Route::get('stafford-certs/{stafford_cert}/export-pdf', [\App\Http\Controllers\StaffordQualificationController::class, 'exportPdf'])->name('stafford-certs.export-pdf');
@@ -90,7 +98,7 @@ Route::middleware(['auth'])->group(function () {
         })->name('order-allocations.index');
     });
 
-    // Factory Portal - PO creation and factory dashboard 
+    // Factory Portal - PO creation and factory dashboard
     Route::middleware('role:factory')->group(function () {
         Route::get('factory-portal', [\App\Http\Controllers\FactoryPortalController::class, 'index'])->name('factory-portal.index');
         Route::post('factory-portal/{id}/store-po', [\App\Http\Controllers\FactoryPortalController::class, 'storePurchaseOrder'])->name('factory-portal.store-po');
