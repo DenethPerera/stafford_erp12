@@ -115,6 +115,17 @@
                         <i class="bi bi-file-earmark-pdf-fill"></i>
                         <span>PDF</span>
                     </button>
+
+                    <!-- Reject Button -->
+                    @role('super_admin')
+                    <button type="button" 
+                            @click="performBulkAction('reject')" 
+                            class="btn btn-sm rounded-pill fw-bold px-3 py-1.5 shadow-sm d-flex align-items-center gap-2"
+                            style="background: rgba(220, 53, 69, 0.1); color: #dc3545; border: 1.5px solid rgba(220, 53, 69, 0.35); font-size: 0.85rem;">
+                        <i class="bi bi-x-circle-fill"></i>
+                        <span>Reject</span>
+                    </button>
+                    @endrole
                 </div>
 
                 <div class="vr opacity-25" style="height: 22px; background-color: #00A39A;"></div>
@@ -334,7 +345,7 @@
                             <th class="py-1.5 px-2 text-muted text-uppercase fw-bolder text-nowrap" style="width: 130px; font-size: 10.5px; letter-spacing: 0.5px;">Test Report</th>
                             <th class="py-1.5 px-2 text-muted text-uppercase fw-bolder text-nowrap" style="width: 105px; font-size: 10.5px; letter-spacing: 0.5px;">Status</th>
                             <th class="py-1.5 px-2 text-muted text-uppercase fw-bolder text-nowrap" style="width: 105px; font-size: 10.5px; letter-spacing: 0.5px;">API Sync</th>
-                            <th class="py-1.5 px-2 text-muted text-uppercase fw-bolder text-center text-nowrap" style="width: 70px; font-size: 10.5px; letter-spacing: 0.5px;">Action</th>
+                            <th class="py-1.5 px-2 text-muted text-uppercase fw-bolder text-center text-nowrap" style="width: 130px; font-size: 10.5px; letter-spacing: 0.5px;">Action</th>
                         </tr>
                     </thead>
 
@@ -385,7 +396,12 @@
                         <div class="d-flex flex-column gap-1">
                             <template x-for="(test, tIdx) in record.tests" :key="tIdx">
                                 <div class="d-inline-flex align-items-center gap-1.5">
-                                    <span class="fw-bold text-dark font-monospace" style="font-size: 11px;" x-text="test.testReportId || '-'"></span>
+                                    <span class="fw-bold font-monospace cursor-pointer" 
+                                          :class="(test.testReportFile || test.testReportFileUrl || test.testReportUrl) ? 'text-primary text-decoration-underline' : 'text-dark'"
+                                          style="font-size: 11px;" 
+                                          @click="viewAttachment(test, record)"
+                                          :title="(test.testReportFile || test.testReportFileUrl || test.testReportUrl) ? 'Click to view test report' : 'No attachment uploaded'"
+                                          x-text="test.testReportId || '-'"></span>
                                     <button type="button"
                                             @click="viewAttachment(test, record)"
                                             class="btn btn-sm btn-light border rounded px-1.5 py-0 shadow-sm d-inline-flex align-items-center"
@@ -430,7 +446,17 @@
                     </div>
                 </td>
                 <td class="py-3 px-3">
-                    <div class="d-flex align-items-center justify-content-center gap-2">
+                    <div class="d-flex align-items-center justify-content-center gap-1.5">
+                        <!-- @role('super_admin')
+                        <button type="button" 
+                                @click.stop="openRejectModal(record)" 
+                                class="btn btn-sm btn-outline-danger rounded-pill px-2 py-0.5 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" 
+                                style="font-size: 11px; height: 24px;"
+                                title="Reject this report and send back to laboratory">
+                            <i class="bi bi-x-circle"></i> Reject
+                        </button>
+                        @endrole -->
+
                         <div class="position-relative" @click.stop>
                             <button @click="toggleMenu(record.id)" class="btn btn-sm btn-light border rounded py-0 px-1.5 text-secondary shadow-sm" style="font-size: 11px;">
                                 <i class="bi bi-three-dots"></i>
@@ -441,6 +467,9 @@
                                 <button @click="editRecord(record); activeMenu = null" class="dropdown-item fw-bold text-secondary d-flex align-items-center justify-content-between py-2">
                                     <span><i class="bi bi-pencil me-2"></i>Edit</span>
                                     <span x-show="record.apiSyncStatus === 'synced'" class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size: 9px;">Synced</span>
+                                </button>
+                                <button @click="openRejectModal(record); activeMenu = null" class="dropdown-item fw-bold text-danger d-flex align-items-center gap-2 py-2">
+                                    <i class="bi bi-x-circle"></i> Reject Report
                                 </button>
                                 @else
                                 <template x-if="record.apiSyncStatus !== 'synced'">
@@ -570,7 +599,7 @@
                                                 <div x-show="test.testReportUrl"><span class="fw-bold">URL:</span> <a :href="test.testReportUrl" class="text-primary text-decoration-none" target="_blank">Link</a></div>
                                                 <div x-show="test.testReportFile" class="mt-1">
                                                     <span class="fw-bold">Attachment:</span> 
-                                                    <a :href="test.testReportFileUrl || ('/storage/' + test.testReportFile)" target="_blank" class="badge bg-light text-primary border border-primary border-opacity-25 text-decoration-none d-inline-flex align-items-center gap-1">
+                                                    <a :href="getTestFileUrl(test)" target="_blank" class="badge bg-light text-primary border border-primary border-opacity-25 text-decoration-none d-inline-flex align-items-center gap-1">
                                                         <i class="bi bi-paperclip"></i>
                                                         <span x-text="test.testReportFileName || 'View File'"></span>
                                                     </a>
@@ -1024,16 +1053,50 @@
                                         </div>
                                         <div class="col-md-4">
                                             <label class="form-label text-muted text-uppercase fw-bold" style="font-size: 11px; letter-spacing: 1px;">
-                                                <i class="bi bi-paperclip text-primary me-1"></i> Attached Report
+                                                <i class="bi bi-paperclip text-primary me-1"></i> Attach Report File
                                             </label>
+
+                                            {{-- Show existing attachment with option to replace --}}
                                             <div x-show="test.testReportFile">
-                                                <a :href="test.testReportFileUrl || ('/storage/' + test.testReportFile)" target="_blank" class="badge bg-light text-primary border border-primary border-opacity-25 text-decoration-none d-inline-flex align-items-center gap-1 p-2 w-100 text-truncate" :title="test.testReportFileName">
+                                                <a :href="getTestFileUrl(test)"
+                                                   target="_blank"
+                                                   class="badge bg-light text-primary border border-primary border-opacity-25 text-decoration-none d-inline-flex align-items-center gap-1 p-2 w-100 text-truncate mb-2"
+                                                   :title="test.testReportFileName">
                                                     <i class="bi bi-file-earmark-check-fill text-success"></i>
                                                     <span class="text-truncate" x-text="test.testReportFileName || 'View Document'"></span>
                                                 </a>
+                                                <button type="button"
+                                                        @click="test.testReportFile = ''; test.testReportFileName = ''; test.testReportFileUrl = ''"
+                                                        class="btn btn-sm btn-outline-danger rounded-pill px-2 py-0 fw-semibold w-100" style="font-size: 11px;">
+                                                    <i class="bi bi-x-circle me-1"></i> Remove & Replace
+                                                </button>
                                             </div>
-                                            <div x-show="!test.testReportFile" class="text-muted small pt-2 fst-italic" style="font-size: 11px;">
-                                                No file attached
+
+                                            {{-- Upload UI shown when no file is attached yet --}}
+                                            <div x-show="!test.testReportFile">
+                                                {{-- Uploading spinner --}}
+                                                <div x-show="test.isUploadingFile" class="d-flex align-items-center gap-2 py-2 text-primary small fw-semibold">
+                                                    <span class="spinner-border spinner-border-sm" role="status"></span>
+                                                    Uploading...
+                                                </div>
+
+                                                {{-- Drop-zone / Upload trigger --}}
+                                                <div x-show="!test.isUploadingFile"
+                                                     class="border border-dashed rounded-3 text-center p-3 bg-light position-relative"
+                                                     style="border-color: #ced4da; cursor: pointer;"
+                                                     @dragover.prevent
+                                                     @drop.prevent="adminUploadFile($event.dataTransfer.files[0], index)"
+                                                     @click="$refs['adminFileInput_' + index] && $refs['adminFileInput_' + index].click()">
+                                                    <i class="bi bi-cloud-arrow-up-fill text-primary fs-5 d-block mb-1"></i>
+                                                    <span class="small fw-semibold text-muted">Click or drag file here</span>
+                                                    <div class="small text-muted mt-1" style="font-size: 10px;">PDF, DOC, JPG, PNG, XLS — max 20 MB</div>
+                                                    <input type="file"
+                                                           :x-ref="'adminFileInput_' + index"
+                                                           class="position-absolute top-0 start-0 w-100 h-100 opacity-0"
+                                                           style="cursor: pointer;"
+                                                           accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.xls,.xlsx"
+                                                           @change="adminUploadFile($event.target.files[0], index); $event.target.value = ''">
+                                                </div>
                                             </div>
                                         </div>
                                         <div class="col-12">
@@ -1210,7 +1273,16 @@
     </div>
 
     <!-- LAB REPORT ATTACHMENT PREVIEW MODAL -->
-    <div :class="attachmentModalOpen ? 'd-block' : 'd-none'" class="modal fade show" tabindex="-1" style="background: rgba(0,0,0,0.6);" aria-modal="true" role="dialog" x-cloak>
+    <div :class="attachmentModalOpen ? 'd-block' : 'd-none'" 
+         x-show="attachmentModalOpen"
+         @keydown.escape.window="closeAttachmentModal()"
+         class="modal fade show" 
+         tabindex="-1" 
+         style="background: rgba(0,0,0,0.65); z-index: 1060;" 
+         aria-modal="true" 
+         role="dialog" 
+         @click.self="closeAttachmentModal()"
+         x-cloak>
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" style="max-width: 950px;">
             <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
                 <!-- Modal Header -->
@@ -1266,7 +1338,12 @@
                             <p class="text-muted small mx-auto mb-3" style="max-width: 440px;">
                                 No document file or external report URL was attached to this test report record (<span class="fw-bold font-monospace" x-text="attachmentData.reportId"></span>).
                             </p>
-                            <span class="badge bg-secondary bg-opacity-10 text-secondary px-3 py-1.5 rounded-pill" x-show="attachmentData.labName" x-text="'Lab: ' + attachmentData.labName"></span>
+                            <span class="badge bg-secondary bg-opacity-10 text-secondary px-3 py-1.5 rounded-pill mb-3 d-inline-block" x-show="attachmentData.labName" x-text="'Lab: ' + attachmentData.labName"></span>
+                            <div x-show="selectedRecordForAttachment">
+                                <button type="button" class="btn btn-sm btn-primary rounded-pill px-4 fw-bold shadow-sm" @click="closeAttachmentModal(); editRecord(selectedRecordForAttachment)">
+                                    <i class="bi bi-upload me-1"></i> Attach Test Report File
+                                </button>
+                            </div>
                         </div>
                     </template>
                 </div>
@@ -1274,7 +1351,14 @@
                 <!-- Modal Footer -->
                 <div class="modal-footer bg-white border-top py-2.5 px-4 d-flex justify-content-between align-items-center">
                     <span class="small text-muted text-truncate" style="max-width: 400px;" x-text="attachmentData.fileName || ''"></span>
-                    <button type="button" class="btn btn-light fw-bold rounded-pill px-4 border" @click="closeAttachmentModal()">Close</button>
+                    <div class="d-flex align-items-center gap-2">
+                        <template x-if="attachmentData.hasAttachment">
+                            <a :href="attachmentData.url" download class="btn btn-sm btn-outline-secondary fw-bold rounded-pill px-3">
+                                <i class="bi bi-download me-1"></i> Download
+                            </a>
+                        </template>
+                        <button type="button" class="btn btn-light fw-bold rounded-pill px-4 border" @click="closeAttachmentModal()">Close</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1355,6 +1439,78 @@
             </div>
         </div>
     </div>
+
+    <!-- Reject Confirmation Modal -->
+    <div class="modal fade" id="rejectConfirmModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="bg-danger bg-opacity-10 text-danger rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                            <i class="bi bi-x-circle-fill fs-5"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold text-dark mb-0">Reject Qualification Report</h5>
+                            <span class="text-muted small">Send back to testing laboratory for revision</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close shadow-none" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body py-3">
+                    <div class="alert alert-warning border-0 rounded-3 py-2 px-3 small d-flex align-items-center gap-2 mb-3">
+                        <i class="bi bi-info-circle-fill text-warning flex-shrink-0"></i>
+                        <span>This record will be removed from this Collections table and sent back to the testing laboratory (<span class="fw-bold">Submitted Tasks</span>) where they can review your notes, edit, and re-submit.</span>
+                    </div>
+
+                    <template x-if="recordToReject">
+                        <div class="bg-light p-3 rounded-3 mb-3 small">
+                            <div class="d-flex justify-content-between mb-1.5">
+                                <span class="text-muted fw-semibold">Style / Product:</span>
+                                <span class="fw-bold text-dark" x-text="recordToReject.styleNo || recordToReject.primaryProductId || '-'"></span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1.5">
+                                <span class="text-muted fw-semibold">PO Number:</span>
+                                <span class="fw-bold text-dark" x-text="recordToReject.poNumber || '-'"></span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1.5" x-show="recordToReject.otherPosCount > 0">
+                                <span class="text-muted fw-semibold">Grouped POs:</span>
+                                <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25" x-text="(recordToReject.otherPosCount + 1) + ' POs in this collection'"></span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1.5">
+                                <span class="text-muted fw-semibold">Factory:</span>
+                                <span class="fw-bold text-dark" x-text="recordToReject.factoryName || '-'"></span>
+                            </div>
+                            <div class="d-flex justify-content-between" x-show="recordToReject.assignedLabName">
+                                <span class="text-muted fw-semibold">Testing Lab:</span>
+                                <span class="fw-bold text-primary" x-text="recordToReject.assignedLabName || '-'"></span>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div>
+                        <label class="form-label text-muted fw-bold small mb-1">
+                            Rejection Reason / Notes for Laboratory <span class="fw-normal text-muted">(Optional)</span>:
+                        </label>
+                        <textarea class="form-control rounded-3" 
+                                  rows="3" 
+                                  x-model="rejectReason" 
+                                  placeholder="e.g. Test report attachment is incomplete, missing flammability standard citation, or needs revised last test date..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-top-0 pt-0">
+                    <button type="button" class="btn btn-light rounded-pill px-4 fw-semibold border" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" 
+                            class="btn btn-danger rounded-pill px-4 fw-bold shadow-sm d-inline-flex align-items-center gap-2"
+                            :disabled="isRejecting"
+                            @click="confirmReject()">
+                        <span x-show="isRejecting" class="spinner-border spinner-border-sm" role="status"></span>
+                        <i x-show="!isRejecting" class="bi bi-x-circle-fill"></i>
+                        <span x-text="isRejecting ? 'Rejecting...' : 'Confirm Reject'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 @endsection
 
@@ -1420,6 +1576,11 @@
             expandedRow: null,
             activeMenu: null,
             
+            // Rejection State
+            recordToReject: null,
+            rejectReason: '',
+            isRejecting: false,
+            
             // Wizard State
             wizardOpen: false,
             wizardStep: 1,
@@ -1429,6 +1590,7 @@
 
             // Attachment Preview Modal State
             attachmentModalOpen: false,
+            selectedRecordForAttachment: null,
             attachmentData: {
                 title: '',
                 reportId: '',
@@ -1696,10 +1858,18 @@
                     'archive': 'archive',
                     'complete': 'mark complete',
                     'incomplete': 'mark incomplete',
-                    'sync-cpsc': 'sync'
+                    'sync-cpsc': 'sync',
+                    'reject': 'reject'
                 };
                 let actionText = actionLabels[action] || action;
-                if (!confirm(`Are you sure you want to ${actionText} ${this.selectedRecords.length} records?`)) return;
+                let reason = '';
+                if (action === 'reject') {
+                    const promptVal = prompt(`Are you sure you want to reject ${this.selectedRecords.length} records and send them back to the laboratory?\n\nEnter optional rejection reason for the laboratory:`, '');
+                    if (promptVal === null) return; // User cancelled
+                    reason = promptVal;
+                } else {
+                    if (!confirm(`Are you sure you want to ${actionText} ${this.selectedRecords.length} records?`)) return;
+                }
 
                 fetch(`{{ url('stafford-certs/bulk-action') }}`, {
                     method: 'POST',
@@ -1709,7 +1879,8 @@
                     },
                     body: JSON.stringify({
                         action: action,
-                        ids: this.selectedRecords
+                        ids: this.selectedRecords,
+                        reason: reason
                     })
                 })
                 .then(res => {
@@ -1958,12 +2129,45 @@
                 document.body.classList.remove('modal-open');
             },
 
+            getTestFileUrl(test) {
+                if (!test) return '';
+                if (test.testReportFile) {
+                    const cleanPath = String(test.testReportFile).replace(/^\/+/, '');
+                    return '{{ route('stafford-certs.view-report-file') }}?file=' + encodeURIComponent(cleanPath);
+                }
+                if (test.testReportFileUrl) {
+                    const str = String(test.testReportFileUrl);
+                    if (str.includes('stafford-certs/report-file')) {
+                        return str;
+                    }
+                    const storageIdx = str.indexOf('storage/');
+                    if (storageIdx !== -1) {
+                        const relPath = str.substring(storageIdx + 8).replace(/^\/+/, '');
+                        return '{{ route('stafford-certs.view-report-file') }}?file=' + encodeURIComponent(relPath);
+                    }
+                    return str;
+                }
+                if (test.testReportUrl) {
+                    let u = String(test.testReportUrl).trim();
+                    if (u && !u.match(/^[a-zA-Z]+:\/\//) && !u.startsWith('/')) {
+                        u = 'https://' + u;
+                    }
+                    return u;
+                }
+                return '';
+            },
+
             viewAttachment(test, record) {
-                let url = test.testReportFileUrl || (test.testReportFile ? ('/storage/' + test.testReportFile) : '') || test.testReportUrl || '';
-                const fileName = test.testReportFileName || (test.testReportFile ? test.testReportFile.split('/').pop() : '') || (url ? url.split('/').pop() : '');
-                const cleanUrl = (url || '').toLowerCase().split('?')[0];
-                const isPdf = cleanUrl.endsWith('.pdf') || (url || '').includes('.pdf');
-                const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(cleanUrl);
+                this.selectedRecordForAttachment = record;
+                const url = this.getTestFileUrl(test);
+                const fileName = test.testReportFileName 
+                    || (test.testReportFile ? test.testReportFile.split('/').pop() : '') 
+                    || (url && url.includes('file=') ? decodeURIComponent(url.split('file=').pop().split('&')[0]).split('/').pop() : '')
+                    || (url ? url.split('/').pop() : '');
+
+                const cleanName = (fileName || test.testReportFile || url || '').toLowerCase().split('?')[0];
+                const isPdf = cleanName.endsWith('.pdf') || (url || '').toLowerCase().includes('.pdf');
+                const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(cleanName);
 
                 this.attachmentData = {
                     title: (record.styleNo ? record.styleNo + ' - ' : '') + (record.productName || 'Test Report'),
@@ -1981,6 +2185,7 @@
 
             closeAttachmentModal() {
                 this.attachmentModalOpen = false;
+                this.selectedRecordForAttachment = null;
                 document.body.classList.remove('modal-open');
             },
             
@@ -2020,6 +2225,10 @@
                     testReportUrl: '',
                     testReportKey: '',
                     testReportId: '',
+                    testReportFile: '',
+                    testReportFileName: '',
+                    testReportFileUrl: '',
+                    isUploadingFile: false,
                     componentTesting: false,
                     componentDetails: '',
                     citations: []
@@ -2032,8 +2241,42 @@
                     isExclusion: true,
                     exclusionReason: '',
                     citations: [],
-                    labName: 'Testing Exclusion'
+                    labName: 'Testing Exclusion',
+                    isUploadingFile: false
                 });
+            },
+
+            async adminUploadFile(file, testIndex) {
+                if (!file) return;
+                const test = this.formData.tests[testIndex];
+                if (!test) return;
+
+                test.isUploadingFile = true;
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('_token', '{{ csrf_token() }}');
+
+                try {
+                    const res = await fetch('{{ route('stafford-certs.upload-report-file') }}', {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json' },
+                        body: formData
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) {
+                        this.showNotification('error', 'Upload Failed', data.message || 'File upload failed. Please try again.');
+                        return;
+                    }
+                    test.testReportFile    = data.file_path;
+                    test.testReportFileName = data.file_name;
+                    test.testReportFileUrl  = data.file_url;
+                    this.showNotification('success', 'File Uploaded', `"${data.file_name}" attached successfully.`);
+                } catch (err) {
+                    console.error('Upload error:', err);
+                    this.showNotification('error', 'Upload Error', 'A network error occurred during upload.');
+                } finally {
+                    test.isUploadingFile = false;
+                }
             },
             
             removeLab(index) {
@@ -2082,6 +2325,14 @@
                 const url = this.editId ? `{{ url('stafford-certs') }}/${this.editId}` : '{{ route('stafford-certs.store') }}';
                 const method = this.editId ? 'PUT' : 'POST';
 
+                const payload = JSON.parse(JSON.stringify(this.formData));
+                if (payload.tests) {
+                    payload.tests = payload.tests.map(t => {
+                        const { isUploadingFile, ...rest } = t;
+                        return rest;
+                    });
+                }
+
                 fetch(url, {
                     method: method,
                     headers: {
@@ -2089,7 +2340,7 @@
                         'X-CSRF-TOKEN': '{{ csrf_token() }}',
                         'Accept': 'application/json'
                     },
-                    body: JSON.stringify(this.formData)
+                    body: JSON.stringify(payload)
                 })
                 .then(async res => {
                     const data = await res.json();
@@ -2149,6 +2400,55 @@
             this.showNotification('error', 'Error', 'Failed to archive collection.');
            });
         }
+       },
+
+       openRejectModal(record) {
+           this.recordToReject = record;
+           this.rejectReason = '';
+           this.isRejecting = false;
+           const modalEl = document.getElementById('rejectConfirmModal');
+           if (modalEl) {
+               const modal = new bootstrap.Modal(modalEl);
+               modal.show();
+           }
+       },
+
+       confirmReject() {
+           if (!this.recordToReject) return;
+           this.isRejecting = true;
+           const id = this.recordToReject.id;
+
+           fetch(`{{ url('stafford-certs') }}/${id}/reject`, {
+               method: 'POST',
+               headers: {
+                   'Content-Type': 'application/json',
+                   'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                   'Accept': 'application/json'
+               },
+               body: JSON.stringify({
+                   reason: this.rejectReason
+               })
+           })
+           .then(res => res.json())
+           .then(data => {
+               this.isRejecting = false;
+               const modalEl = document.getElementById('rejectConfirmModal');
+               if (modalEl) {
+                   const modal = bootstrap.Modal.getInstance(modalEl);
+                   if (modal) modal.hide();
+               }
+               if (data.success) {
+                   this.loadRecords();
+                   this.showNotification('success', 'Rejected', data.message || 'Record rejected and returned to laboratory successfully.');
+               } else {
+                   this.showNotification('error', 'Error', data.message || 'Failed to reject record.');
+               }
+           })
+           .catch(err => {
+               this.isRejecting = false;
+               console.error('Reject error:', err);
+               this.showNotification('error', 'Error', 'Failed to reject record.');
+           });
        }
         };
     }

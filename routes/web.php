@@ -52,9 +52,11 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('factories', \App\Http\Controllers\FactoryController::class);
         
         // Stafford CRUD Routes
+        Route::get('stafford-certs/report-file', [\App\Http\Controllers\StaffordQualificationController::class, 'viewReportFile'])->name('stafford-certs.view-report-file');
         Route::get('stafford-certs/{stafford_cert}/export-pdf', [\App\Http\Controllers\StaffordQualificationController::class, 'exportPdf'])->name('stafford-certs.export-pdf');
         Route::post('stafford-certs/export-bulk-pdf', [\App\Http\Controllers\StaffordQualificationController::class, 'exportBulkPdf'])->name('stafford-certs.export-bulk-pdf');
         Route::post('stafford-certs/bulk-action', [\App\Http\Controllers\StaffordQualificationController::class, 'bulkAction'])->name('stafford-certs.bulk-action');
+        Route::post('stafford-certs/{stafford_cert}/reject', [\App\Http\Controllers\StaffordQualificationController::class, 'reject'])->name('stafford-certs.reject');
         Route::get('stafford-certs/erp-po-lookup', [\App\Http\Controllers\StaffordQualificationController::class, 'eravPoLookup'])->name('stafford-certs.erp-po-lookup');
         Route::get('stafford-certs/erp-po-search', [\App\Http\Controllers\StaffordQualificationController::class, 'eravPoSearch'])->name('stafford-certs.erp-po-search');
         Route::resource('stafford-certs', \App\Http\Controllers\StaffordQualificationController::class)
@@ -68,6 +70,8 @@ Route::middleware(['auth'])->group(function () {
             ]);
         // Test Report Types CRUD
         Route::resource('test-report-types', \App\Http\Controllers\TestReportTypeController::class);
+        // Upload report file (accessible by both super_admin and lab)
+        Route::post('stafford-certs/upload-report-file', [\App\Http\Controllers\StaffordQualificationController::class, 'uploadReportFile'])->name('stafford-certs.upload-report-file');
     });
 
     // Laboratory specific routes
@@ -101,6 +105,37 @@ Route::middleware(['auth'])->group(function () {
         Route::get('purchase-orders/{id}', [\App\Http\Controllers\PurchaseOrderController::class, 'show'])->name('purchase-orders.show');
     });
 });
+
+// Fallback route to safely stream storage files if symlink is unavailable
+Route::get('storage/{path}', function ($path) {
+    $cleanPath = str_replace(['..', '\\'], ['', '/'], $path);
+    $cleanPath = ltrim($cleanPath, '/');
+
+    $candidates = [
+        storage_path('app/public/' . $cleanPath),
+        storage_path('app/public/lab_reports/' . basename($cleanPath)),
+        storage_path('app/' . $cleanPath),
+        public_path('storage/' . $cleanPath),
+    ];
+
+    $filePath = null;
+    foreach ($candidates as $candidate) {
+        if (file_exists($candidate) && is_file($candidate)) {
+            $filePath = $candidate;
+            break;
+        }
+    }
+
+    if (!$filePath) {
+        abort(404, 'File not found in storage: ' . htmlspecialchars(basename($cleanPath)));
+    }
+
+    $mimeType = mime_content_type($filePath) ?: 'application/octet-stream';
+    return response()->file($filePath, [
+        'Content-Type' => $mimeType,
+        'Content-Disposition' => 'inline; filename="' . basename($filePath) . '"',
+    ]);
+})->where('path', '.*');
 
 require __DIR__.'/auth.php';
 

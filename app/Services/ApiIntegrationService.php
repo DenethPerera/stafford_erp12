@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\StaffordQualification;
 use App\Models\Erav\EravPurchaseOrder;
+use App\Models\Erav\EravProdOrder;
 use App\Models\Erav\EravProductStyle;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
@@ -20,22 +21,37 @@ class ApiIntegrationService
      */
     public function fetchPoAndAssignToLab(string $poNumber, int $labId)
     {
-        // Try to find the PO in ERP database if provided
+        // Try to find the PO in ERP database if provided (check prodorder_ref first, then pdf_po_refno)
         $eravPo = null;
+        $prodOrder = null;
         if (!empty($poNumber)) {
-            $eravPo = EravPurchaseOrder::with(['items', 'prodOrders.branch'])
-                ->where('pdf_po_refno', $poNumber)
+            $prodOrder = EravProdOrder::with(['purchaseOrder.items', 'branch'])
+                ->where('prodorder_ref', $poNumber)
+                ->where('isoffline', 0)
                 ->first();
+
+            if ($prodOrder && $prodOrder->purchaseOrder) {
+                $eravPo = $prodOrder->purchaseOrder;
+            } else {
+                $eravPo = EravPurchaseOrder::with(['items', 'prodOrders.branch'])
+                    ->where('pdf_po_refno', $poNumber)
+                    ->first();
+                $prodOrder = $eravPo?->prodOrders?->first(fn($p) => $p->isoffline == 0 && !empty($p->mbranchlist_id) && $p->branch !== null)
+                    ?? $eravPo?->prodOrders?->first();
+            }
         }
 
         // If not found (or if simulating a mock PO), grab a real valid PO with items from ERP
         if (!$eravPo) {
-            $eravPo = EravPurchaseOrder::with(['items', 'prodOrders.branch'])
-                ->whereNotNull('pdf_po_refno')
-                ->where('pdf_po_refno', '!=', '')
-                ->has('items')
+            $prodOrder = EravProdOrder::with(['purchaseOrder.items', 'branch'])
+                ->whereNotNull('prodorder_ref')
+                ->where('prodorder_ref', '!=', '')
+                ->where('prodorder_ref', '!=', '-')
+                ->where('isoffline', 0)
+                ->whereHas('purchaseOrder.items')
                 ->inRandomOrder()
                 ->first();
+            $eravPo = $prodOrder?->purchaseOrder;
         }
 
         if ($eravPo) {
@@ -71,10 +87,12 @@ class ApiIntegrationService
            
            $cleanProductId = $rawProdId ? substr($rawProdId, 0, 19) : null;
 
+            $season = $prodOrder?->prod_order_season ?: '';
+
             $data = [
-                'po_number'              => $eravPo->pdf_po_refno,
+                'po_number'              => $prodOrder?->prodorder_ref ?: $eravPo->pdf_po_refno,
                 'season'                 => $season,
-                'po_date'                => $eravPo->porder_date ? (string)$eravPo->porder_date : now()->format('Y-m-d'),
+                'po_date'                => $prodOrder?->prodorder_date ? (string)$prodOrder->prodorder_date : ($eravPo->porder_date ? (string)$eravPo->porder_date : now()->format('Y-m-d')),
                 'buyer'                  => $eravPo->customer_name ?: 'Stafford Buyer',
                 'importer_name'          => $eravPo->customer_name,
                 'importer_address'       => $eravPo->customer_addr,
@@ -141,14 +159,40 @@ class ApiIntegrationService
      */
     public function getPoDetails(string $poNumber, ?string $targetStyle = null): ?array
     {
-        $eravPo = EravPurchaseOrder::with(['items', 'prodOrders.branch'])
-            ->where('pdf_po_refno', $poNumber)
-            ->first();
+        $prodOrder = null;
+        $eravPo = null;
+
+        if (!empty($poNumber)) {
+            // First look up by prodorder_ref in prodorder_list
+            $prodOrder = EravProdOrder::with(['purchaseOrder.items', 'branch'])
+                ->where('prodorder_ref', $poNumber)
+                ->where('isoffline', 0)
+                ->first();
+
+            if ($prodOrder && $prodOrder->purchaseOrder) {
+                $eravPo = $prodOrder->purchaseOrder;
+            } else {
+                // Fallback to porder_pdf_list by pdf_po_refno
+                $eravPo = EravPurchaseOrder::with(['items', 'prodOrders.branch'])
+                    ->where('pdf_po_refno', $poNumber)
+                    ->first();
+                $prodOrder = $eravPo?->prodOrders?->first(fn($p) => $p->isoffline == 0 && !empty($p->mbranchlist_id) && $p->branch !== null)
+                    ?? $eravPo?->prodOrders?->first();
+            }
+        }
 
         // Check if there is an existing StaffordQualification record with lab tests
         $qualQuery = StaffordQualification::withoutGlobalScopes()
             ->with('lab')
-            ->where('po_number', $poNumber);
+            ->where(function ($q) use ($poNumber, $eravPo, $prodOrder) {
+                $q->where('po_number', $poNumber);
+                if ($prodOrder && $prodOrder->prodorder_ref) {
+                    $q->orWhere('po_number', $prodOrder->prodorder_ref);
+                }
+                if ($eravPo && $eravPo->pdf_po_refno) {
+                    $q->orWhere('po_number', $eravPo->pdf_po_refno);
+                }
+            });
 
         if (!empty($targetStyle)) {
             $qualQuery->where(function ($q) use ($targetStyle) {
@@ -258,13 +302,15 @@ class ApiIntegrationService
             $firstItem = $eravPo->items->first();
         }
 
-        // Pick production order that has a linked factory/branch
-        $prodOrder = $eravPo->prodOrders->first(function ($po) {
-            return !empty($po->mbranchlist_id) && $po->branch !== null;
-        }) ?? $eravPo->prodOrders->first();
+        // If not already resolved, pick production order that has a linked factory/branch
+        if (!$prodOrder) {
+            $prodOrder = $eravPo->prodOrders->first(function ($po) {
+                return !empty($po->mbranchlist_id) && $po->branch !== null;
+            }) ?? $eravPo->prodOrders->first();
+        }
 
-        $season = $eravPo->prodOrders->first(fn($p) => !empty($p->prod_order_season))?->prod_order_season
-            ?? $prodOrder?->prod_order_season
+        $season = $prodOrder?->prod_order_season
+            ?? $eravPo->prodOrders->first(fn($p) => !empty($p->prod_order_season))?->prod_order_season
             ?? ($existingQual?->season ?? '');
 
         $branch = $prodOrder?->branch;
@@ -321,9 +367,9 @@ class ApiIntegrationService
 
         return $this->cleanUtf8(array_merge([
             'found'                  => true,
-            'poNumber'               => $eravPo->pdf_po_refno,
+            'poNumber'               => $prodOrder?->prodorder_ref ?: ($eravPo->pdf_po_refno ?: $poNumber),
             'season'                 => $season,
-            'poDate'                 => $eravPo->porder_date ? (string)$eravPo->porder_date : '',
+            'poDate'                 => $prodOrder?->prodorder_date ? (string)$prodOrder->prodorder_date : ($eravPo->porder_date ? (string)$eravPo->porder_date : ''),
             'buyer'                  => $eravPo->customer_name,
             'importerName'           => $eravPo->customer_name,
             'importerAddress'        => $importerAddr,

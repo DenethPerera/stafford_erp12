@@ -24,6 +24,7 @@ class StaffordQualification extends Model
     protected $casts = [
         'tests' => 'array',
         'additional_identifiers' => 'array',
+        'rejected_at' => 'datetime',
     ];
 
     protected static function booted()

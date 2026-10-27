@@ -43,7 +43,8 @@ class FactoryPortalController extends Controller
         $status = $request->input('status');
 
         $query = EravProdOrder::with(['items', 'branch'])
-            ->where('mbranchlist_id', $branchId);
+            ->where('mbranchlist_id', $branchId)
+            ->where('isoffline', 0);
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -68,15 +69,17 @@ class FactoryPortalController extends Controller
             ->groupBy('prodorder_id');
 
         // Metrics
-        $totalOrdersCount = EravProdOrder::where('mbranchlist_id', $branchId)->count();
+        $totalOrdersCount = EravProdOrder::where('mbranchlist_id', $branchId)->where('isoffline', 0)->count();
         $posCreatedCount = PurchaseOrder::where('mbranchlist_id', $branchId)->count();
         $totalAllocatedPcs = (int) DB::table('prodorder_info')
             ->join('prodorder_list', 'prodorder_info.prodorder_id', '=', 'prodorder_list.prodorder_id')
             ->where('prodorder_list.mbranchlist_id', $branchId)
+            ->where('prodorder_list.isoffline', 0)
             ->sum('prodorder_info.prod_qty');
 
         // Seasons list
         $seasons = EravProdOrder::where('mbranchlist_id', $branchId)
+            ->where('isoffline', 0)
             ->whereNotNull('prod_order_season')
             ->where('prod_order_season', '!=', '')
             ->distinct()
@@ -109,7 +112,9 @@ class FactoryPortalController extends Controller
     public function show(Request $request, $id)
     {
         $branchId = $this->getBranchId($request);
-        $order = EravProdOrder::with(['items', 'branch'])->findOrFail($id);
+        $order = EravProdOrder::with(['items', 'branch'])
+            ->where('isoffline', 0)
+            ->findOrFail($id);
 
         //ensure order belongs to this factory
         if ($order->mbranchlist_id != $branchId && !auth()->user()?->isAdmin()) {
@@ -302,7 +307,9 @@ class FactoryPortalController extends Controller
         }
 
         $branchId = $this->getBranchId($request);
-        $order = EravProdOrder::with(['items', 'branch'])->findOrFail($id);
+        $order = EravProdOrder::with(['items', 'branch'])
+            ->where('isoffline', 0)
+            ->findOrFail($id);
 
         if ($order->mbranchlist_id != $branchId) {
             abort(403, 'Unauthorized access to this allocated production order.');
