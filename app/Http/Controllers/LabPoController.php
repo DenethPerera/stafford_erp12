@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Erav\EravProdOrder;
 use App\Models\Erav\EravProductStyle;
-
 use App\Models\Erav\EravPurchaseOrder;
 use App\Models\Erav\EravPurchaseOrderItem;
 use App\Models\Lab;
@@ -35,15 +35,16 @@ class LabPoController extends Controller
             $styles = collect();
         }
 
-        // Distinct PO numbers for the filter
+        // Distinct PO numbers for the filter (from prodorder_list.prodorder_ref)
         try {
-            $poNumbers = EravPurchaseOrder::whereNotNull('pdf_po_refno')
-                ->where('pdf_po_refno', '!=', '')
-                ->where('pdf_po_refno', '!=', '-')
-                ->has('items')
+            $poNumbers = EravProdOrder::whereNotNull('prodorder_ref')
+                ->where('prodorder_ref', '!=', '')
+                ->where('prodorder_ref', '!=', '-')
+                ->where('isoffline', 0)
+                ->whereHas('purchaseOrder.items')
                 ->distinct()
-                ->orderBy('pdf_po_refno')
-                ->pluck('pdf_po_refno')
+                ->orderBy('prodorder_ref')
+                ->pluck('prodorder_ref')
                 ->filter()
                 ->values();
         } catch (\Throwable $e) {
@@ -78,34 +79,42 @@ class LabPoController extends Controller
             ->get(['id', 'po_number', 'style_no', 'season', 'factory_name', 'lab_id', 'status', 'api_sync_status', 'tests', 'created_at'])
             ->filter(fn($q) => !empty($q->tests) && is_array($q->tests) && count($q->tests) > 0);
 
-        $query = EravPurchaseOrder::query()
-            ->whereNotNull('pdf_po_refno')
-            ->where('pdf_po_refno', '!=', '')
-            ->has('items');
+        $query = EravProdOrder::query()
+            ->whereNotNull('prodorder_ref')
+            ->where('prodorder_ref', '!=', '')
+            ->where('prodorder_ref', '!=', '-')
+            ->where('isoffline', 0)
+            ->whereHas('purchaseOrder.items');
 
         // Filter by Style (exact trimmed match)
         $selectedStyle = $request->filled('style') ? trim($request->style) : null;
         if (!empty($selectedStyle)) {
-            $query->whereHas('items', function ($q) use ($selectedStyle) {
+            $query->whereHas('purchaseOrder.items', function ($q) use ($selectedStyle) {
                 $q->whereRaw('TRIM(item_styleno) = ?', [$selectedStyle]);
             });
         }
 
-        // Filter and search by Purchase Order Reference Number
+        // Filter and search by Purchase Order Reference Number (prodorder_ref)
         $selectedPo = $request->filled('po_number') ? trim($request->po_number) : null;
         if (!empty($selectedPo)) {
-            $query->where('pdf_po_refno', 'like', "%{$selectedPo}%");
+            $query->where('prodorder_ref', 'like', "%{$selectedPo}%");
         }
 
-        // Filter by Search Query (PO Ref, Customer/Buyer, Style No, or Description)
+        // Filter by Search Query (PO Ref, Customer/Buyer, Factory/Branch, Style No, or Description)
         if ($request->filled('search')) {
             $term = trim($request->search);
             $query->where(function ($q) use ($term) {
-                $q->where('pdf_po_refno', 'like', "%{$term}%")
-                    ->orWhere('customer_name', 'like', "%{$term}%")
-                    ->orWhereHas('items', function ($sub) use ($term) {
-                        $sub->where('item_styleno', 'like', "%{$term}%")
-                            ->orWhere('item_description', 'like', "%{$term}%");
+                $q->where('prodorder_ref', 'like', "%{$term}%")
+                    ->orWhereHas('branch', function ($br) use ($term) {
+                        $br->where('br_name', 'like', "%{$term}%")
+                            ->orWhere('br_code', 'like', "%{$term}%");
+                    })
+                    ->orWhereHas('purchaseOrder', function ($poQuery) use ($term) {
+                        $poQuery->where('customer_name', 'like', "%{$term}%")
+                            ->orWhereHas('items', function ($sub) use ($term) {
+                                $sub->where('item_styleno', 'like', "%{$term}%")
+                                    ->orWhere('item_description', 'like', "%{$term}%");
+                            });
                     });
             });
         }
@@ -117,27 +126,30 @@ class LabPoController extends Controller
 
         // Fetch matching POs with line items and production branch
         if ($selectedStyle || $selectedPo || $request->filled('search')) {
-            $rawPos = $query->with(['items', 'prodOrders.branch'])
-                ->orderBy('id', 'desc')
+            $rawProdOrders = $query->with(['purchaseOrder.items', 'branch'])
+                ->orderBy('prodorder_id', 'desc')
                 ->get();
         } else {
-            $rawPos = $query->with(['items', 'prodOrders.branch'])
-                ->orderBy('id', 'desc')
+            $rawProdOrders = $query->with(['purchaseOrder.items', 'branch'])
+                ->orderBy('prodorder_id', 'desc')
                 ->take(300)
                 ->get();
         }
 
         // 2. Map POs and group item variations (color/size) per Style ID
-        $mappedItems = $rawPos->flatMap(function ($po) use ($selectedStyle) {
-            $prodOrder = $po->prodOrders->first(fn($p) => !empty($p->mbranchlist_id) && $p->branch !== null) ?? $po->prodOrders->first();
-            $branch = $prodOrder?->branch;
+        $mappedItems = $rawProdOrders->flatMap(function ($prodOrder) use ($selectedStyle) {
+            $po = $prodOrder->purchaseOrder;
+            if (!$po || !$po->items) {
+                return [];
+            }
+
+            $branch = $prodOrder->branch;
             $factoryName = $branch?->br_name ? trim($branch->br_name) : ($branch?->br_code ?: 'Branch N/A');
 
-            $season = $po->prodOrders->first(fn($p) => !empty($p->prod_order_season))?->prod_order_season
-                ?? $prodOrder?->prod_order_season
-                ?? '';
+            $season = $prodOrder->prod_order_season ?: '';
 
-            $poRef = (string) $po->pdf_po_refno;
+            $poRef = (string) $prodOrder->prodorder_ref;
+            $poDate = $prodOrder->prodorder_date ? (string) $prodOrder->prodorder_date : ($po->porder_date ? (string) $po->porder_date : '');
 
             // Group line items in this PO by their Style ID
             $groupedByStyle = $po->items->groupBy(fn($i) => trim($i->item_styleno ?: ''))
@@ -149,7 +161,7 @@ class LabPoController extends Controller
             }
 
             // Map each Style in this PO to a consolidated record collapsing color/size variations
-            return $groupedByStyle->map(function ($styleItems, $styleNo) use ($po, $poRef, $factoryName, $season) {
+            return $groupedByStyle->map(function ($styleItems, $styleNo) use ($prodOrder, $po, $poRef, $poDate, $factoryName, $season) {
                 $firstItem = $styleItems->first();
                 $totalQty = (int) $styleItems->sum('item_order_qty');
 
@@ -178,10 +190,10 @@ class LabPoController extends Controller
                 })->values()->all();
 
                 return [
-                    'id'              => $po->id . '_' . md5($styleNo),
-                    'poId'            => $po->id,
+                    'id'              => $prodOrder->prodorder_id . '_' . md5($styleNo),
+                    'poId'            => $prodOrder->prodorder_id,
                     'poNumber'        => $poRef,
-                    'poDate'          => $po->porder_date ? (string) $po->porder_date : '',
+                    'poDate'          => $poDate,
                     'buyer'           => $po->customer_name ?: 'Stafford Buyer',
                     'factoryName'     => $factoryName,
                     'styleNo'         => (string) $styleNo,
@@ -220,7 +232,16 @@ class LabPoController extends Controller
                 $qStyle = mb_strtolower(trim($q->style_no ?? ''));
                 $qFactory = mb_strtolower(trim($q->factory_name ?? ''));
                 $qSeason = mb_strtolower(trim($q->season ?? ''));
+                $qPo = (string)($q->po_number ?? '');
 
+                // A qualification must strictly match the style of this group if style is defined
+                if (!empty($styleClean)) {
+                    if (empty($qStyle) || $qStyle !== $styleClean) {
+                        return false;
+                    }
+                }
+
+                // Match 1: By Style + Season + Factory
                 if (!empty($qStyle) && $qStyle === $styleClean) {
                     if (empty($seasonClean) || empty($qSeason) || $seasonClean === $qSeason) {
                         if (empty($factoryClean) || empty($qFactory) || str_contains($factoryClean, $qFactory) || str_contains($qFactory, $factoryClean)) {
@@ -229,7 +250,8 @@ class LabPoController extends Controller
                     }
                 }
 
-                if (in_array((string)$q->po_number, $allPoNumbers, true)) {
+                // Match 2: By PO Number within the same Style
+                if (!empty($qPo) && in_array($qPo, $allPoNumbers, true)) {
                     return true;
                 }
 
@@ -334,7 +356,9 @@ class LabPoController extends Controller
                     'tests'            => $record->tests ?: [],
                     'apiSyncStatus'    => $record->api_sync_status ?: 'pending',
                     'apiSyncMessage'   => $record->api_sync_message,
-                    'createdAt'        => $record->created_at?->format('M d, Y H:i'),
+                    'rejectionReason'  => $record->rejection_reason ?? null,
+                    'rejectedAt'       => $record->rejected_at ? \Carbon\Carbon::parse($record->rejected_at)->format('M d, Y H:i') : null,
+                    'createdAt'        => $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('M d, Y H:i') : null,
                     'isSynced'         => ($record->api_sync_status === 'synced'),
                 ];
             });
@@ -381,6 +405,11 @@ class LabPoController extends Controller
                 'success' => false,
                 'message' => 'This record has already been synced to CPSC/ERP. Edits are locked.'
             ], 403);
+        }
+
+        // When revising a rejected task, reset status to Complete
+        if ($qualification->status === 'Rejected' || $request->input('status') === 'Rejected') {
+            $request->merge(['status' => 'Complete', 'rejectionReason' => null]);
         }
 
         // Ensure labId and existing PO attributes are preserved if not provided in payload
@@ -438,7 +467,7 @@ class LabPoController extends Controller
         $file = $request->file('file');
         $originalName = $file->getClientOriginalName();
         $path = $file->store('lab_reports', 'public');
-        $url = asset('storage/' . $path);
+        $url = route('stafford-certs.view-report-file', ['file' => $path]);
 
         return response()->json([
             'success'   => true,

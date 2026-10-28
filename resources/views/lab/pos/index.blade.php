@@ -1308,6 +1308,9 @@
                             found.isMyLab = true;
                             found.submittingLab = this.userLabName;
                         }
+
+                        // Refresh paginated records to ensure all IDs and statuses are in sync
+                        this.fetchPos(this.pagination.currentPage);
                     } else {
                         let errMsg = body.message || 'Failed to submit report.';
                         if (body.errors) {

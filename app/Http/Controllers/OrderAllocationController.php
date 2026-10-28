@@ -18,7 +18,8 @@ class OrderAllocationController extends Controller
         $branchId = $request->input('branch_id');
         $season   = $request->input('season');
 
-        $query = EravProdOrder::with(['branch', 'items']);
+        $query = EravProdOrder::with(['branch', 'items'])
+            ->where('isoffline', 0);
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -45,7 +46,7 @@ class OrderAllocationController extends Controller
 
         // Filter dropdown data
         $branches = EravBranch::whereNotNull('br_name')->where('br_name', '!=', '')->orderBy('br_name')->get(['id', 'br_name', 'br_code']);
-        $seasons  = EravProdOrder::whereNotNull('prod_order_season')->where('prod_order_season', '!=', '')->distinct()->orderBy('prod_order_season')->pluck('prod_order_season');
+        $seasons  = EravProdOrder::where('isoffline', 0)->whereNotNull('prod_order_season')->where('prod_order_season', '!=', '')->distinct()->orderBy('prod_order_season')->pluck('prod_order_season');
 
         return view('order_allocations.index', compact('orders', 'branches', 'seasons', 'createdPos', 'search', 'branchId', 'season'));
     }
