@@ -1,3 +1,5 @@
+
+
 {{-- @extends('layouts.app')
 
 @section('header', 'Create Shipment')
@@ -18,40 +20,21 @@
 
 
 @php
-// Country dropdown options.
-// $countries = [
-//     'LK' => 'Sri Lanka',
-//     'BD' => 'Bangladesh',
-//     'CN' => 'China',
-//     'IN' => 'India',
-//     'ID' => 'Indonesia',
-//     'MY' => 'Malaysia',
-//     'PK' => 'Pakistan',
-//     'SG' => 'Singapore',
-//     'TH' => 'Thailand',
-//     'TR' => 'Turkey',
-//     'AE' => 'United Arab Emirates',
-//     'GB' => 'United Kingdom',
-//     'US' => 'United States',
-//     'VN' => 'Vietnam',
-// ];
-    // Factory dropdown options.
-    // $factories = [
-    //     'factory-1' => 'Colombo Apparel Factory',
-    //     'factory-2' => 'Kandy Garment Factory',
-    //     'factory-3' => 'Galle Manufacturing',
-    //     'factory-4' => 'Negombo Textile Factory',
-    // ];
-
-
+    // Restore the form after a validation error.
+    $oldPurchaseOrderIds = array_values((array) old('purchase_order_ids', []));
+    $oldFactoryIds = old('shipment_type', 'individual') === 'individual'
+        ? [old('factory_id', '')]
+        : array_values((array) old('factory_ids', []));
+    $manualShipmentId = old('shipment_id_mode') === 'manual' ? old('shipment_id', '') : '';
 @endphp
 
 
 <style>
     .shipment-details {
         background: #ffffff;
-        border-radius: 22px;
-        padding: 30px;
+        max-width: 70rem;
+        border-radius: 18px;
+        padding: 24px;
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
     }
 
@@ -59,7 +42,7 @@
         color: #124E78;
         font-size: 20px;
         font-weight: 700;
-        margin-bottom: 30px;
+        margin-bottom: 20px;
     }
 
     .shipment-details .form-label,
@@ -72,16 +55,47 @@
     .shipment-details .form-control,
     .shipment-details .form-select,
     .shipment-details .factory-button {
-        min-height: 55px;
+        min-height: 42px;
         border: 1px solid #dbe0e6;
-        border-radius: 15px;
-        padding: 12px 15px;
+        border-radius: 10px;
+        padding: 8px 12px;
+    }
+
+    .shipment-details .form-select {
+        padding-right: 36px;
     }
 
     .shipment-details .form-control:focus,
     .shipment-details .form-select:focus {
         border-color: #00A39A;
         box-shadow: 0 0 0 3px rgba(0, 163, 154, 0.12);
+    }
+
+    .shipment-details .shipment-fields {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+        align-items: start;
+        gap: 20px 24px;
+    }
+
+    .shipment-details .shipment-field {
+        min-width: 0;
+        margin: 0;
+    }
+
+    .shipment-details .shipment-id-options {
+        margin: 8px 0 0;
+        font-size: 14px;
+    }
+
+    .shipment-details .factory-button {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .shipment-details .factory-menu {
+        min-width: 100%;
+        overflow-wrap: anywhere;
     }
 
     .shipment-details .factory-button {
@@ -100,14 +114,14 @@
 
     .shipment-details .shipment-actions {
         border-top: 1px solid #dbe0e6;
-        margin-top: 30px;
-        padding-top: 30px;
+        margin-top: 20px;
+        padding-top: 16px;
     }
 
     .shipment-details .shipment-actions .btn {
-        min-height: 48px;
+        min-height: 42px;
         border-radius: 50px;
-        padding: 10px 30px;
+        padding: 8px 22px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -149,7 +163,7 @@
 
     @media (max-width: 576px) {
         .shipment-details {
-            padding: 22px;
+            padding: 16px;
         }
 
         .shipment-details .shipment-actions .btn {
@@ -166,12 +180,18 @@
     <h2>Shipment Details</h2>
 
 
-    <form id="shipment-form" novalidate>
+    <form id="shipment-form"
+    method="POST"
+    action="{{ route('shipment-management.store') }}"
+    novalidate >
+
+    @csrf
+
+        <div class="shipment-fields">
 
         {{-- Country of Origin and Buyer ID --}}
-<div class="row g-4 mb-4">
 
-    <div class="col-md-6">
+    <div class="shipment-field">
         <label for="country-of-origin" class="form-label mb-2">
             Country of Origin <span class="text-danger">*</span>
         </label>
@@ -207,62 +227,23 @@
 </select>
     </div>
 
-    <div class="col-md-6">
+    <div class="shipment-field">
         <label for="buyer-id" class="form-label mb-2">
-            Buyer ID
+            Buyer <span class="text-danger">*</span>
         </label>
-
-        <input
-            id="buyer-id"
-            name="buyer_id"
-            type="text"
-            class="form-control"
-            placeholder="Enter Buyer ID"
-        >
-    </div>
-
-</div>
-
-{{-- Shipment ID mode --}}
-<fieldset class="mb-3">
-    <legend class="mb-3">Shipment ID Option</legend>
-
-    <div class="d-flex flex-wrap gap-3">
-
-        <div class="form-check">
-            <input
-                id="manual-id"
-                type="radio"
-                name="shipment_id_mode"
-                value="manual"
-                class="form-check-input"
-            >
-
-            <label for="manual-id" class="form-check-label">
-                Manual Entry
-            </label>
-        </div>
-
-        <div class="form-check">
-            <input
-                id="auto-id"
-                type="radio"
-                name="shipment_id_mode"
-                value="auto"
-                class="form-check-input"
-                checked
-            >
-
-            <label for="auto-id" class="form-check-label">
-                Auto Generate
-            </label>
-        </div>
+        <select id="buyer-id" name="buyer_id" class="form-select" required>
+            <option value="">Select a buyer</option>
+            @foreach($buyers as $id => $name)
+                <option value="{{ $id }}" @selected((string) old('buyer_id', '') === (string) $id)>
+                    {{ $name }}
+                </option>
+            @endforeach
+        </select>
 
     </div>
-</fieldset>
 
 {{-- Shipment ID --}}
-<div class="mb-4">
+<div class="shipment-field">
     <label for="shipment-id" class="form-label mb-2">
         Shipment ID <span class="text-danger">*</span>
     </label>
@@ -272,46 +253,75 @@
         name="shipment_id"
         type="text"
         class="form-control bg-light"
-        value="LK-000001"
+        value="{{ old('shipment_id', '') }}"
         placeholder="Enter Shipment ID"
         aria-describedby="shipment-id-help"
         readonly
         required
     >
 
+    <fieldset class="shipment-id-options">
+        <legend class="visually-hidden">Shipment ID Option</legend>
+        <div class="d-flex flex-wrap gap-3">
+            <div class="form-check">
+                <input id="manual-id" type="radio" name="shipment_id_mode" value="manual"
+                    class="form-check-input" @checked(old('shipment_id_mode', 'auto') === 'manual')>
+                <label for="manual-id" class="form-check-label">Manual Entry</label>
+            </div>
+            <div class="form-check">
+                <input id="auto-id" type="radio" name="shipment_id_mode" value="auto"
+                    class="form-check-input" @checked(old('shipment_id_mode', 'auto') === 'auto')>
+                <label for="auto-id" class="form-check-label">Auto Generate</label>
+            </div>
+        </div>
+    </fieldset>
+
     <div
         id="shipment-id-help"
         class="form-text"
         aria-live="polite"
     >
-        Sample ID preview. The prefix follows the selected country.
+        Select a country to display the next Shipment ID.
     </div>
 </div>
 
-{{-- Purchase Order ID --}}
-<div class="mb-4">
-    <label for="purchase-order-id" class="form-label mb-2">
-        Purchase Order ID
+{{-- Purchase Orders --}}
+<div class="shipment-field">
+    <label id="purchase-orders-label" for="purchase-order-button" class="form-label mb-2">
+        Purchase Orders <span class="text-danger">*</span>
     </label>
-
-    <input
-        id="purchase-order-id"
-        name="purchase_order_id"
-        type="text"
-        class="form-control"
-        placeholder="Enter Purchase Order ID"
-    >
+    <div class="dropdown">
+        <button
+            id="purchase-order-button"
+            type="button"
+            class="btn factory-button dropdown-toggle w-100 text-start"
+            data-bs-toggle="dropdown"
+            data-bs-auto-close="outside"
+            aria-expanded="false"
+            aria-controls="purchase-order-options"
+            aria-describedby="shipment-selection-message"
+            aria-invalid="false"
+            disabled
+        >
+            Select purchase orders
+        </button>
+        <div
+            id="purchase-order-options"
+            class="dropdown-menu factory-menu w-100 p-3"
+            role="group"
+            aria-labelledby="purchase-orders-label"
+        ></div>
+    </div>
+    <div id="shipment-selection-message" class="form-text" role="status">Select a buyer first.</div>
 </div>
 
-
-
         {{-- Shipment Type --}}
-        <fieldset class="mb-4">
-            <legend class="mb-3">
+        <fieldset class="shipment-field">
+            <legend class="mb-2">
                 Shipment Type <span class="text-danger">*</span>
             </legend>
 
-            <div class="d-flex flex-wrap gap-3">
+            <div class="d-flex flex-column gap-2">
 
                 <div class="form-check">
                     <input
@@ -320,7 +330,7 @@
                         name="shipment_type"
                         value="individual"
                         class="form-check-input"
-                        checked
+                        @checked(old('shipment_type', 'individual') === 'individual')
                     >
 
                     <label for="individual" class="form-check-label">
@@ -335,6 +345,7 @@
                         name="shipment_type"
                         value="consolidated"
                         class="form-check-input"
+                        @checked(old('shipment_type', 'individual') === 'consolidated')
                     >
 
                     <label for="consolidated" class="form-check-label">
@@ -346,29 +357,18 @@
         </fieldset>
 
         {{-- Individual Shipment: select one factory --}}
-        <div id="individual-group">
+        <div id="individual-group" class="shipment-field">
             <label for="individual-factory" class="form-label mb-2">
                 Factory <span class="text-danger">*</span>
             </label>
 
-            <select
-                id="individual-factory"
-                name="factory_id"
-                class="form-select"
-                required
-            >
-                <option value="">Select a factory</option>
-
-                @foreach($factories as $id => $name)
-                    <option value="{{ $id }}">
-                        {{ $name }}
-                    </option>
-                @endforeach
+            <select id="individual-factory" name="factory_id" class="form-select" required disabled>
+                <option value="">Select purchase orders first</option>
             </select>
         </div>
 
         {{-- Consolidated Shipment: select multiple factories --}}
-        <div id="consolidated-group" class="d-none">
+        <div id="consolidated-group" class="d-none shipment-field">
             <label
                 id="factories-label"
                 for="factory-button"
@@ -398,27 +398,7 @@
                     class="dropdown-menu factory-menu w-100 p-3"
                     role="group"
                     aria-labelledby="factories-label"
-                >
-                    @foreach($factories as $id => $name)
-                        <div class="form-check mb-2">
-                            <input
-                                id="multiple-{{ $id }}"
-                                type="checkbox"
-                                name="factory_ids[]"
-                                value="{{ $id }}"
-                                class="form-check-input factory-checkbox"
-                                disabled
-                            >
-
-                            <label
-                                for="multiple-{{ $id }}"
-                                class="form-check-label"
-                            >
-                                {{ $name }}
-                            </label>
-                        </div>
-                    @endforeach
-                </div>
+                ></div>
             </div>
 
             <div id="factory-help" class="form-text">
@@ -428,6 +408,8 @@
             <div id="factory-error" class="invalid-feedback">
                 Please select at least two factories.
             </div>
+        </div>
+
         </div>
 
         {{-- Form buttons --}}
@@ -453,6 +435,66 @@
 
     </form>
 
+    <div class="shipment-details mt-4">
+    <h2>Created Shipments</h2>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col">Shipment ID</th>
+                    <th scope="col">Country</th>
+                    <th scope="col">Buyer</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Factory Count</th>
+                    <th scope="col">Created On</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                @forelse ($shipments as $shipment)
+                    <tr>
+                        <td>{{ $shipment->shipment_id }}</td>
+
+                        <td>
+                            {{ $countries[$shipment->country_of_origin]
+                                ?? $shipment->country_of_origin }}
+                        </td>
+
+                        <td>
+                            {{ $buyers[$shipment->buyer_id] ?? 'Unavailable' }}
+                        </td>
+
+                        <td>{{ ucfirst($shipment->shipment_type) }}</td>
+
+                         <td>
+                            @forelse ($shipment->factory_ids ?? [] as $factoryId)
+        <div>
+            {{ $factoryNames[$factoryId] ?? 'Factory unavailable' }}
+        </div>
+    @empty
+        No factories
+    @endforelse
+</td>
+
+                        <td>
+                           {{ $shipment->created_at?->timezone('Asia/Colombo')->format('d M Y, h:i A') }}
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            No shipments created yet.
+                        </td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    {{ $shipments->links('pagination::bootstrap-5') }}
+</div>
+
 </div>
 
 
@@ -460,236 +502,273 @@
 
 @push('scripts')
 <script>
-
-
-
-
 document.addEventListener('DOMContentLoaded', function () {
-
-
-    // Get the elements used by this page.
     const shipmentForm = document.getElementById('shipment-form');
+    const buyerSelect = document.getElementById('buyer-id');
+    const purchaseOrderButton = document.getElementById('purchase-order-button');
+    const purchaseOrderOptions = document.getElementById('purchase-order-options');
+    const selectionMessage = document.getElementById('shipment-selection-message');
+    const individualRadio = document.getElementById('individual');
+    const consolidatedRadio = document.getElementById('consolidated');
+    const individualFactory = document.getElementById('individual-factory');
+    const factoryButton = document.getElementById('factory-button');
+    const factoryOptions = document.getElementById('factory-options');
+    const factoryError = document.getElementById('factory-error');
+    const purchaseOrdersUrl = @json(route('shipment-management.purchase-orders'));
+    let factoryLinks = [];
+    let requestNumber = 0;
 
-    // Get the new form elements.
+    // 1. Read the selected values.
+    function selectedPurchaseOrderIds() {
+        const ids = [];
+        for (const checkbox of purchaseOrderOptions.querySelectorAll('input:checked')) {
+            ids.push(checkbox.value);
+        }
+        return ids;
+    }
+
+    function updatePurchaseOrderButton() {
+        const count = selectedPurchaseOrderIds().length;
+        if (count === 0) {
+            purchaseOrderButton.textContent = 'Select purchase orders';
+        } else if (count === 1) {
+            purchaseOrderButton.textContent = '1 purchase order selected';
+        } else {
+            purchaseOrderButton.textContent = count + ' purchase orders selected';
+        }
+        purchaseOrderButton.classList.remove('is-invalid');
+        purchaseOrderButton.setAttribute('aria-invalid', 'false');
+        selectionMessage.classList.remove('text-danger');
+    }
+
+    function selectedFactoryIds() {
+        const ids = [];
+        if (individualFactory.value) {
+            ids.push(individualFactory.value);
+        }
+        for (const checkbox of factoryOptions.querySelectorAll('input:checked')) {
+            ids.push(checkbox.value);
+        }
+        return ids;
+    }
+
+    function updateFactoryButton() {
+        const count = factoryOptions.querySelectorAll('input:checked').length;
+        factoryButton.textContent = count ? count + ' factories selected' : 'Select factories';
+        factoryButton.classList.remove('is-invalid');
+        factoryButton.setAttribute('aria-invalid', 'false');
+        factoryError.classList.remove('d-block');
+    }
+
+    // 2. Individual: common factories. Consolidated: all related factories.
+    function showFactories(savedIds = []) {
+        const purchaseOrderIds = selectedPurchaseOrderIds();
+        const keepIds = [];
+        for (const id of savedIds) {
+            keepIds.push(String(id));
+        }
+
+        const factories = {};
+        for (const link of factoryLinks) {
+            if (purchaseOrderIds.includes(String(link.purchase_order_id))) {
+                const id = String(link.factory_id);
+                if (!factories[id]) {
+                    factories[id] = { name: link.factory_name, count: 0 };
+                }
+                factories[id].count++;
+            }
+        }
+
+        document.getElementById('individual-group').classList.toggle('d-none', !individualRadio.checked);
+        document.getElementById('consolidated-group').classList.toggle('d-none', individualRadio.checked);
+        individualFactory.innerHTML = '<option value="">Select a factory</option>';
+        individualFactory.disabled = !individualRadio.checked || purchaseOrderIds.length === 0;
+        individualFactory.required = individualRadio.checked;
+        factoryOptions.innerHTML = '';
+
+        for (const id in factories) {
+            const factory = factories[id];
+            if (individualRadio.checked) {
+                if (factory.count === purchaseOrderIds.length) {
+                    const option = new Option(factory.name, id);
+                    option.selected = keepIds.length === 1 && keepIds.includes(id);
+                    individualFactory.add(option);
+                }
+            } else {
+                const row = document.createElement('div');
+                row.className = 'form-check mb-2';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.name = 'factory_ids[]';
+                checkbox.value = id;
+                checkbox.id = 'multiple-' + id;
+                checkbox.className = 'form-check-input factory-checkbox';
+                checkbox.checked = keepIds.includes(id);
+                const label = document.createElement('label');
+                label.htmlFor = checkbox.id;
+                label.className = 'form-check-label';
+                label.textContent = factory.name;
+                row.append(checkbox, label);
+                factoryOptions.append(row);
+            }
+        }
+
+        if (individualRadio.checked && purchaseOrderIds.length > 0 && individualFactory.options.length === 1) {
+            individualFactory.options[0].text = 'No factory is connected to all selected POs';
+        }
+        factoryButton.disabled = individualRadio.checked || factoryOptions.children.length === 0;
+        updateFactoryButton();
+    }
+
+    // 3. Load the buyer's POs and their factory links.
+    async function loadPurchaseOrders(savedPoIds = [], savedFactoryIds = []) {
+        const currentRequest = ++requestNumber;
+        factoryLinks = [];
+        purchaseOrderOptions.innerHTML = '';
+        purchaseOrderButton.disabled = true;
+        updatePurchaseOrderButton();
+        showFactories([]);
+        selectionMessage.textContent = 'Select a buyer first.';
+        if (!buyerSelect.value) {
+            return;
+        }
+
+        selectionMessage.textContent = 'Loading purchase orders...';
+        try {
+            const response = await fetch(purchaseOrdersUrl + '?buyer_id=' + encodeURIComponent(buyerSelect.value), {
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!response.ok) {
+                throw new Error('Unable to load purchase orders.');
+            }
+            const data = await response.json();
+            // Ignore an older response when the buyer changes quickly.
+            if (currentRequest !== requestNumber) {
+                return;
+            }
+
+            const keepIds = [];
+            for (const id of savedPoIds) {
+                keepIds.push(String(id));
+            }
+            for (const purchaseOrder of data.purchase_orders) {
+                const id = String(purchaseOrder.id);
+                const row = document.createElement('div');
+                row.className = 'form-check mb-2';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.name = 'purchase_order_ids[]';
+                checkbox.value = id;
+                checkbox.id = 'purchase-order-' + id;
+                checkbox.className = 'form-check-input';
+                checkbox.checked = keepIds.includes(id);
+                const label = document.createElement('label');
+                label.htmlFor = checkbox.id;
+                label.className = 'form-check-label';
+                label.textContent = purchaseOrder.pdf_po_refno;
+                row.append(checkbox, label);
+                purchaseOrderOptions.append(row);
+            }
+            factoryLinks = data.factory_links;
+            purchaseOrderButton.disabled = data.purchase_orders.length === 0;
+            updatePurchaseOrderButton();
+            selectionMessage.textContent = data.purchase_orders.length
+                ? 'Select one or more purchase orders.' : 'No active purchase orders available.';
+            showFactories(savedFactoryIds);
+        } catch (error) {
+            if (currentRequest === requestNumber) {
+                selectionMessage.textContent = 'Unable to load purchase orders. Select the buyer again.';
+            }
+        }
+    }
+
+    buyerSelect.onchange = function () {
+        loadPurchaseOrders();
+    };
+    purchaseOrderOptions.onchange = function () {
+        updatePurchaseOrderButton();
+        selectionMessage.textContent = 'Select one or more purchase orders.';
+        showFactories(selectedFactoryIds());
+    };
+    function changeShipmentType() {
+        showFactories(selectedFactoryIds());
+    }
+    individualRadio.onchange = changeShipmentType;
+    consolidatedRadio.onchange = changeShipmentType;
+    factoryOptions.onchange = updateFactoryButton;
+
+    // 4. Check required fields. Laravel checks all relationships when saving.
+    shipmentForm.onsubmit = function (event) {
+        if (purchaseOrderButton.disabled || selectedPurchaseOrderIds().length === 0) {
+            event.preventDefault();
+            selectionMessage.textContent = 'Select a buyer and at least one PO.';
+            selectionMessage.classList.add('text-danger');
+            purchaseOrderButton.classList.add('is-invalid');
+            purchaseOrderButton.setAttribute('aria-invalid', 'true');
+            purchaseOrderButton.focus();
+            return;
+        }
+        if (!shipmentForm.reportValidity()) {
+            event.preventDefault();
+            return;
+        }
+        if (consolidatedRadio.checked && selectedFactoryIds().length < 2) {
+            event.preventDefault();
+            factoryError.textContent = 'Please select at least two factories.';
+            factoryError.classList.add('d-block');
+            factoryButton.classList.add('is-invalid');
+            factoryButton.setAttribute('aria-invalid', 'true');
+            factoryButton.focus();
+        }
+    };
+
+    // 5. Keep the existing country and Shipment ID behavior.
     const countrySelect = document.getElementById('country-of-origin');
     const manualIdRadio = document.getElementById('manual-id');
     const autoIdRadio = document.getElementById('auto-id');
     const shipmentId = document.getElementById('shipment-id');
     const shipmentIdHelp = document.getElementById('shipment-id-help');
+    const nextShipmentNumbers = @json($nextShipmentNumbers);
+    let manualShipmentId = @json($manualShipmentId);
 
-    // Sample sequence for the UI demonstration.
-    const sampleSequence = '000001';
-
-    // Remember the user's manual ID when switching modes.
-    let manualShipmentId = '';
-
-
-    // Update the generated ID when the country changes.
-function updateGeneratedShipmentId() {
-    if (autoIdRadio.checked) {
-        const countryCode = countrySelect.value;
-        // shipmentId.value = countrySelect.value + '-' + sampleSequence;
-         shipmentId.value = countryCode? countryCode + '-' + sampleSequence: '';
-    }
-}
-
-// Switch between Manual Entry and Auto Generate.
-function changeShipmentIdMode() {
-    if (autoIdRadio.checked) {
-        shipmentId.readOnly = true;
-        shipmentId.classList.add('bg-light');
-
-        shipmentIdHelp.textContent =
-            'Shipment ID will be generated automatically.';
-
-        updateGeneratedShipmentId();
-    } else {
-        shipmentId.readOnly = false;
-        shipmentId.classList.remove('bg-light');
-
-        shipmentId.value = manualShipmentId;
-
-        shipmentIdHelp.textContent =
-            'Enter your Shipment ID manually.';
-    }
-}
-
-    const individualRadio = document.getElementById('individual');
-    const consolidatedRadio = document.getElementById('consolidated');
-
-    const individualGroup = document.getElementById('individual-group');
-    const consolidatedGroup = document.getElementById('consolidated-group');
-
-    const individualFactory = document.getElementById('individual-factory');
-
-    const factoryButton = document.getElementById('factory-button');
-    const factoryError = document.getElementById('factory-error');
-
-    const factoryCheckboxes = document.querySelectorAll('.factory-checkbox');
-
-
-
-    // Count the selected factories.
-    function countSelectedFactories() {
-        let count = 0;
-
-        for (let i = 0; i < factoryCheckboxes.length; i++) {
-            if (factoryCheckboxes[i].checked) {
-                count = count + 1;
-            }
+    function updateGeneratedShipmentId() {
+        if (autoIdRadio.checked) {
+            const country = countrySelect.value;
+            const number = nextShipmentNumbers[country] ?? 1;
+            shipmentId.value = country ? country + '-' + String(number).padStart(6, '0') : '';
         }
-
-        return count;
     }
 
-
-    // Update the consolidated dropdown button.
-    function updateFactoryButton() {
-        const count = countSelectedFactories();
-
-        if (count === 0) {
-            factoryButton.textContent = 'Select factories';
-        } else if (count === 1) {
-            factoryButton.textContent = '1 factory selected';
+    function changeShipmentIdMode() {
+        shipmentId.readOnly = autoIdRadio.checked;
+        shipmentId.classList.toggle('bg-light', autoIdRadio.checked);
+        if (autoIdRadio.checked) {
+            shipmentIdHelp.textContent = 'This Shipment ID will be used when you save.';
+            updateGeneratedShipmentId();
         } else {
-            factoryButton.textContent = count + ' factories selected';
+            shipmentId.value = manualShipmentId;
+            shipmentIdHelp.textContent = 'Enter your Shipment ID manually.';
         }
     }
 
-
-    // Clear the consolidated factory error.
-    function clearFactoryError() {
-        factoryButton.classList.remove('is-invalid');
-        factoryButton.setAttribute('aria-invalid', 'false');
-
-        factoryError.classList.remove('d-block');
-    }
-
-
-    // Show the correct factory selection.
-    function changeShipmentType() {
-        if (individualRadio.checked) {
-            individualGroup.classList.remove('d-none');
-            consolidatedGroup.classList.add('d-none');
-
-            individualFactory.disabled = false;
-            individualFactory.required = true;
-
-            factoryButton.disabled = true;
-
-            for (let i = 0; i < factoryCheckboxes.length; i++) {
-                factoryCheckboxes[i].disabled = true;
-            }
-        } else {
-            individualGroup.classList.add('d-none');
-            consolidatedGroup.classList.remove('d-none');
-
-            individualFactory.disabled = true;
-            individualFactory.required = false;
-
-            factoryButton.disabled = false;
-
-            for (let i = 0; i < factoryCheckboxes.length; i++) {
-                factoryCheckboxes[i].disabled = false;
-            }
+    countrySelect.onchange = updateGeneratedShipmentId;
+    manualIdRadio.onchange = changeShipmentIdMode;
+    autoIdRadio.onchange = changeShipmentIdMode;
+    shipmentId.oninput = function () {
+        if (manualIdRadio.checked) {
+            manualShipmentId = shipmentId.value;
         }
+    };
+    shipmentForm.onreset = function () {
+        setTimeout(function () {
+            manualShipmentId = '';
+            changeShipmentIdMode();
+            loadPurchaseOrders();
+        }, 0);
+    };
 
-        clearFactoryError();
-        updateFactoryButton();
-    }
-
-
-    // Consolidated shipments require at least two factories.
-    function validateFactories() {
-        const count = countSelectedFactories();
-
-        updateFactoryButton();
-
-        if (count < 2) {
-            factoryButton.classList.add('is-invalid');
-            factoryButton.setAttribute('aria-invalid', 'true');
-
-            factoryError.classList.add('d-block');
-
-            return false;
-        } else {
-            clearFactoryError();
-
-            return true;
-        }
-    }
-
-
-    // Validate the form and show a demo confirmation.
-    function createShipment(event) {
-        // Stop the form from submitting or saving data.
-        event.preventDefault();
-
-        // Check the required individual factory selection.
-        if (shipmentForm.reportValidity() === false) {
-            return;
-        }
-
-        // Check the number of consolidated factories.
-        if (consolidatedRadio.checked) {
-            const factoriesValid = validateFactories();
-
-            if (factoriesValid === false) {
-                factoryButton.focus();
-                return;
-            }
-        }
-
-        alert('Validation passed. Demo only — no shipment was saved.');
-    }
-
-
-    // Restore default values after Reset is clicked.
-function resetShipment() {
-    // Wait until the browser finishes resetting the fields.
-    setTimeout(function () {
-        manualShipmentId = '';
-
-        changeShipmentIdMode();
-        changeShipmentType();
-    }, 0);
-}
-
-    // Update the generated prefix when the country changes.
-countrySelect.addEventListener('change', updateGeneratedShipmentId);
-
-// Change the Shipment ID mode.
-manualIdRadio.addEventListener('change', changeShipmentIdMode);
-autoIdRadio.addEventListener('change', changeShipmentIdMode);
-
-// Remember the manually entered ID.
-shipmentId.addEventListener('input', function () {
-    if (manualIdRadio.checked) {
-        manualShipmentId = shipmentId.value;
-    }
-});
-
-
-    // Listen for shipment type changes.
-    individualRadio.addEventListener('change', changeShipmentType);
-    consolidatedRadio.addEventListener('change', changeShipmentType);
-
-
-    // Listen for factory checkbox changes.
-    for (let i = 0; i < factoryCheckboxes.length; i++) {
-        factoryCheckboxes[i].addEventListener('change', validateFactories);
-    }
-
-
-    // Listen for Create Shipment and Reset.
-    shipmentForm.addEventListener('submit', createShipment);
-    shipmentForm.addEventListener('reset', resetShipment);
-
-
-    // Set up the initial page state.
-    changeShipmentType();
     changeShipmentIdMode();
-
+    loadPurchaseOrders(@json($oldPurchaseOrderIds), @json($oldFactoryIds));
 });
 </script>
 @endpush
