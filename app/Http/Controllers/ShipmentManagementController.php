@@ -7,6 +7,7 @@ use App\Models\Shipment;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -188,7 +189,7 @@ $factoryNames = DB::connection('erav')
                     'buyer_id' => $data['buyer_id'],
                     'shipment_id' => $data['shipment_id'],
                     'shipment_id_mode' => $data['shipment_id_mode'],
-                    'purchase_order_id' => count($purchaseOrderIds) === 1 ? $purchaseOrderIds[0] : null,
+                    'purchase_order_id' => $purchaseOrderIds,
                     'shipment_type' => $data['shipment_type'],
                     'factory_ids' => $factoryIds,
                 ]);
@@ -233,10 +234,299 @@ $factoryNames = DB::connection('erav')
         //
     }
 
-    public function scan()
-    {
-        return view('shipment_management.scan');
+    public function scan(Request $request)
+{
+    $shipment = null;
+    $searchError = null;
+    $importOptions = [];
+    $shippingDetails = [];
+
+    $shipmentId = $request->query('shipment_id', '');
+    $shipmentId = is_string($shipmentId) ? $shipmentId : '';
+
+    $details = [
+        'export_import' => null,
+        'shipment_status' => null,
+        'bl_number' => null,
+        'booking_number' => null,
+        'vessel_name' => null,
+        'voyage_number' => null,
+        'pol' => null,
+        'pod' => null,
+        'etd' => null,
+        'eta' => null,
+        'transit_time' => null,
+        'container_number' => null,
+        'seal_number' => null,
+        'carrier' => null,
+    ];
+
+    if ($request->query->has('shipment_id')) {
+        $validator = Validator::make($request->query(), [
+            'shipment_id' => 'required|string|max:255',
+        ], [
+            'shipment_id.required' => 'Please enter a Shipment ID.',
+        ]);
+
+        if ($validator->fails()) {
+            $searchError = $validator->errors()->first('shipment_id');
+        } else {
+            $shipment = DB::table('shipments')
+                ->where('shipment_id', $shipmentId)
+                ->first();
+
+            // Preserve the existing case-sensitive match.
+            if ($shipment && $shipment->shipment_id !== $shipmentId) {
+                $shipment = null;
+            }
+
+            if (! $shipment) {
+                $searchError = 'Shipment not found.';
+            }
+        }
     }
+
+    if ($shipment) {
+        $import = null;
+
+        if ($shipment->import_id !== null) {
+            // Use the saved import directly.
+            $import = DB::connection('erav')
+                ->table('imports as shipping')
+                ->leftJoin(
+                    'tbl_delivery_statuses as status',
+                    'status.id',
+                    '=',
+                    'shipping.delivery_status'
+                )
+                ->where('shipping.id', $shipment->import_id)
+                ->where('shipping.deleted', 0)
+                ->first([
+                    'shipping.*',
+                    'status.name as status_name',
+                ]);
+
+            if (! $import) {
+                $searchError =
+                    'The saved shipping record is missing or deleted.';
+            }
+        } else {
+            $matches = $this->matchingShipmentImports($shipment)->get();
+
+            // Each import appears once, with its matching PO numbers.
+            foreach ($matches->groupBy('id') as $importId => $rows) {
+                $match = $rows->first();
+
+                $importOptions[] = [
+                    'id' => $importId,
+                    'po_numbers' => $rows->pluck('po_no')
+                        ->unique()
+                        ->implode(', '),
+                    'bl_number' => trim((string) $match->house_bl_no),
+                    'vessel_name' => trim((string) $match->vsl_name),
+                ];
+            }
+        }
+
+        if ($import) {
+            $keyVal = (string) ($import->key_val ?? '');
+
+if ($keyVal === '0') {
+    $details['export_import'] = 'Import';
+} elseif ($keyVal === '1') {
+    $details['export_import'] = 'Export';
+}
+
+
+            $fields = [
+                'bl_number' => 'house_bl_no',
+                'vessel_name' => 'vsl_name',
+                'pol' => 'loading_port_name',
+                'pod' => 'discharge_port_name',
+                'etd' => 'port_edt_date',
+                'eta' => 'port_eta_date',
+                'shipment_status' => 'status_name',
+            ];
+
+            foreach ($fields as $displayField => $databaseField) {
+                $value = trim((string) ($import->$databaseField ?? ''));
+
+                $details[$displayField] = $value !== ''
+                    ? $value
+                    : null;
+            }
+
+            $numbers = [];
+
+            $containers = DB::connection('erav')
+                ->table('imports_container_numbers')
+                ->where('import_id', $import->id)
+                ->orderBy('id')
+                ->pluck('container_no');
+
+            foreach ($containers as $container) {
+                $number = trim((string) $container);
+
+                if ($number !== '') {
+                    $numbers[] = $number;
+                }
+            }
+
+            if (count($numbers) > 0) {
+                $details['container_number'] = implode(
+                    ', ',
+                    array_unique($numbers)
+                );
+            }
+
+            // Invalid dates and zero dates remain unavailable.
+            foreach (['etd', 'eta'] as $field) {
+                $value = $details[$field];
+
+                if ($value !== null) {
+                    $date = \DateTimeImmutable::createFromFormat(
+                        '!Y-m-d',
+                        $value
+                    );
+
+                    if (! $date || $date->format('Y-m-d') !== $value) {
+                        $details[$field] = null;
+                    }
+                }
+            }
+
+            if ($details['etd'] && $details['eta']) {
+                $etd = new \DateTimeImmutable($details['etd']);
+                $eta = new \DateTimeImmutable($details['eta']);
+
+                if ($eta >= $etd) {
+                    $details['transit_time'] =
+                        $etd->diff($eta)->days.' days';
+                }
+            }
+        }
+         if ($shipment->import_id !== null) {
+            $containers = DB::connection('erav')
+                ->table('imports_container_numbers')
+                ->where('import_id', $shipment->import_id)
+                ->orderBy('id')
+                ->pluck('container_no');
+
+            if ($containers->isNotEmpty()) {
+                $details['container_number'] = $containers->implode(', ');
+            }
+        }
+
+        // Preserve the existing details card and missing-value display.
+        $shippingDetails[] = $details;
+    }
+
+
+
+
+    return view('shipment_management.scan', compact(
+        'shipment',
+        'shipmentId',
+        'searchError',
+        'shippingDetails',
+        'importOptions'
+    ));
+}
+
+private function matchingShipmentImports($shipment)
+{
+    $purchaseOrderIds = DB::table('shipment_order_factories')
+        ->where('shipment_id', $shipment->id)
+        ->distinct()
+        ->pluck('purchase_order_id');
+
+    $poNumbers = DB::connection('erav')
+        ->table('porder_pdf_list')
+        ->whereIn('id', $purchaseOrderIds)
+        ->whereNotNull('pdf_po_refno')
+        ->where('pdf_po_refno', '!=', '')
+        ->distinct()
+        ->pluck('pdf_po_refno');
+
+    return DB::connection('erav')
+        ->table('imports as shipping')
+        ->join(
+            'imports_po_nos as links',
+            'links.import_id',
+            '=',
+            'shipping.id'
+        )
+        ->where('shipping.deleted', 0)
+        ->whereIn('links.po_no', $poNumbers)
+        ->select(
+            'shipping.id',
+            'shipping.house_bl_no',
+            'shipping.vsl_name',
+            'links.po_no'
+        )
+        ->distinct()
+        ->orderBy('shipping.id')
+        ->orderBy('links.po_no');
+}
+
+public function saveShipmentImport(Request $request)
+{
+    $data = $request->validate([
+        'shipment_id' => 'required|string|max:255',
+        'import_id' => 'required|integer|min:1',
+    ]);
+
+    $shipment = DB::table('shipments')
+        ->where('shipment_id', $data['shipment_id'])
+        ->first();
+
+    if (! $shipment || $shipment->shipment_id !== $data['shipment_id']) {
+        abort(404, 'Shipment not found.');
+    }
+
+    if ($shipment->import_id !== null) {
+        throw ValidationException::withMessages([
+            'import_id' =>
+                'This shipment already has a saved shipping record. Search again to view it.',
+        ]);
+    }
+
+    // Check the selected record against the shipment POs again.
+    $validImport = $this->matchingShipmentImports($shipment)
+        ->where('shipping.id', $data['import_id'])
+        ->exists();
+
+    if (! $validImport) {
+        throw ValidationException::withMessages([
+            'import_id' =>
+                'Select a shipping record matching the shipment POs.',
+        ]);
+    }
+
+    // Prevent a stale form from overwriting another user's saved link.
+    $updated = DB::table('shipments')
+        ->where('id', $shipment->id)
+        ->whereNull('import_id')
+        ->update([
+            'import_id' => $data['import_id'],
+            'updated_at' => now(),
+        ]);
+
+    if ($updated === 0) {
+        throw ValidationException::withMessages([
+            'import_id' =>
+                'The shipment was linked by another user. Search again to view it.',
+        ]);
+    }
+
+    return redirect()->route('shipment-management.scan', [
+        'shipment_id' => $shipment->shipment_id,
+    ])->with('success', 'Shipping record saved successfully.');
+}
+
+
+
+
 
     public function forwarderLogin()
     {

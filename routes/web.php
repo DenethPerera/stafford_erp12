@@ -19,6 +19,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('shipment-management/forwarder-login', [\App\Http\Controllers\ShipmentManagementController::class, 'forwarderLogin'])->name('shipment-management.forwarder-login');
         Route::resource('shipment-management',\App\Http\Controllers\ShipmentManagementController::class);
 
+        Route::post('shipment-management/scan/link-import', [
+    \App\Http\Controllers\ShipmentManagementController::class,
+    'saveShipmentImport',
+])->name('shipment-management.save-import');
+
 
 
 

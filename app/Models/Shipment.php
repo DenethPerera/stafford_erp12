@@ -18,6 +18,7 @@ class Shipment extends Model
     ];
 
     protected $casts = [
+        'purchase_order_id' => 'array',
         'factory_ids' => 'array',
     ];
 }
