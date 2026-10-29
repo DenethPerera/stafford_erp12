@@ -14,9 +14,15 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('users', \App\Http\Controllers\UserController::class);
         Route::resource('labs', \App\Http\Controllers\LabController::class);
 // custom actions
+        Route::get('shipment-management/purchase-orders',[ \App\Http\Controllers\ShipmentManagementController::class,'purchaseOrdersByBuyer'])->name('shipment-management.purchase-orders');
         Route::get('shipment-management/scan', [\App\Http\Controllers\ShipmentManagementController::class, 'scan'])->name('shipment-management.scan');
         Route::get('shipment-management/forwarder-login', [\App\Http\Controllers\ShipmentManagementController::class, 'forwarderLogin'])->name('shipment-management.forwarder-login');
         Route::resource('shipment-management',\App\Http\Controllers\ShipmentManagementController::class);
+
+        Route::post('shipment-management/scan/link-import', [
+    \App\Http\Controllers\ShipmentManagementController::class,
+    'saveShipmentImport',
+])->name('shipment-management.save-import');
 
 
 
