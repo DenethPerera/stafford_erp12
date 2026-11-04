@@ -56,6 +56,7 @@ class ShipmentPurchaseOrdersTest extends TestCase
         Schema::connection('erav')->create('mbranchlist', function (Blueprint $table) {
             $table->integer('id')->primary();
             $table->string('br_name');
+            $table->string('br_code')->nullable();
             $table->boolean('isoffline')->default(false);
         });
         Schema::connection('erav')->create('prodorder_list', function (Blueprint $table) {
@@ -70,8 +71,8 @@ class ShipmentPurchaseOrdersTest extends TestCase
             ['id' => 1394, 'customer_id' => 5, 'pdf_po_refno' => 'PO-1394'],
         ]);
         DB::connection('erav')->table('mbranchlist')->insert([
-            ['id' => 3, 'br_name' => 'Factory 3'],
-            ['id' => 29, 'br_name' => 'Factory 29'],
+            ['id' => 3, 'br_name' => 'Factory 3', 'br_code' => 'F03'],
+            ['id' => 29, 'br_name' => 'Factory 29', 'br_code' => 'F29'],
         ]);
         DB::connection('erav')->table('prodorder_list')->insert([
             ['porder_pdf_list_id' => 763, 'mbranchlist_id' => 3],
