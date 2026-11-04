@@ -1,10 +1,15 @@
 @php
-    $isShipmentActive = request()->routeIs('shipment-management.*');
+
+    $isShipmentActive = request()->routeIs(
+        'shipment-management.*',
+        'forwarders.*'
+    );
 
     $shipmentLinks = [
         'shipment-management.create' => 'Create Shipment',
         'shipment-management.scan' => 'Shipment Scan',
-        'shipment-management.forwarder-login' => 'Forwarder Login',
+
+        'forwarders.index' => 'Forwarder Details',
     ];
 @endphp
 

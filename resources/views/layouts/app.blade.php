@@ -324,6 +324,22 @@
                         </div>
                         <span class="sidebar-text">Dashboard</span>
                     </a>
+                    @role('forwarder')
+    <a
+        href="{{ route('forwarder.file-upload') }}"
+        class="nav-item px-3 py-2 {{ request()->routeIs('forwarder.file-upload') ? 'active' : '' }}"
+        title="Forwarder File Upload"
+    >
+        <div
+            class="nav-icon-wrapper me-3"
+            style="width: 32px; height: 32px;"
+        >
+            <i class="bi bi-cloud-upload fs-5"></i>
+        </div>
+
+        <span class="sidebar-text">Forwarder File Upload</span>
+    </a>
+@endrole
 
                     @role('super_admin')
                     @php
@@ -508,6 +524,12 @@
                             <i class="bi bi-file-earmark-text-fill fs-5" style="color: #10b981;"></i>
                         </div>
                         <span class="sidebar-text flex-grow-1">Purchase Orders</span>
+                    </a>
+                    <a href="{{ route('shipment-documents.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('shipment-documents.*') ? 'active' : '' }}" title="Shipment Documents">
+                        <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                            <i class="bi bi-folder2-open fs-5" style="color: #00A39A;"></i>
+                        </div>
+                        <span class="sidebar-text flex-grow-1">Shipment Documents</span>
                     </a>
                     @endrole
 
@@ -784,6 +806,12 @@
                         <i class="bi bi-file-earmark-text-fill fs-5" style="color: #10b981;"></i>
                     </div>
                     <span>Purchase Orders</span>
+                </a>
+                <a href="{{ route('shipment-documents.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('shipment-documents.*') ? 'active' : '' }}">
+                    <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                        <i class="bi bi-folder2-open fs-5" style="color: #00A39A;"></i>
+                    </div>
+                    <span>Shipment Documents</span>
                 </a>
                 @endrole
 
