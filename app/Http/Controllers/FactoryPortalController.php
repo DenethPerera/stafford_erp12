@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 class FactoryPortalController extends Controller
 {
- 
+
     protected function getBranchId(Request $request): ?int
     {
         $user = auth()->user();
@@ -27,7 +27,7 @@ class FactoryPortalController extends Controller
         return (int) EravBranch::value('id');
     }
 
-    
+
       //Factory portal dashboard: allocated orders, KPI metrics.
     public function index(Request $request)
     {
@@ -106,9 +106,9 @@ class FactoryPortalController extends Controller
         ));
     }
 
-    
+
      //Show single allocated order with line items, style costing suppliers, and PO creation.
-    
+
     public function show(Request $request, $id)
     {
         $branchId = $this->getBranchId($request);
@@ -296,9 +296,9 @@ class FactoryPortalController extends Controller
         ));
     }
 
-    
+
      //create Purchase Order for the selected supplier.
-     
+
     public function storePurchaseOrder(Request $request, $id)
     {
         // Admins CANNOT create purchase orders.
@@ -413,8 +413,8 @@ class FactoryPortalController extends Controller
                 $price = (float) $itemInput['unit_price'];
                 $baseQty = isset($itemInput['base_quantity']) ? (int) $itemInput['base_quantity'] : ($origItem?->prod_qty ?: $qty);
                 $wastageQty = max(0, $qty - $baseQty);
-                $itemWastagePct = isset($itemInput['wastage_percentage']) 
-                    ? (float) $itemInput['wastage_percentage'] 
+                $itemWastagePct = isset($itemInput['wastage_percentage'])
+                    ? (float) $itemInput['wastage_percentage']
                     : ($baseQty > 0 ? round(($wastageQty / $baseQty) * 100, 2) : 0);
 
                 PurchaseOrderItem::create([
@@ -444,5 +444,60 @@ class FactoryPortalController extends Controller
             DB::rollBack();
             return back()->withErrors(['error' => 'Failed to create Purchase Order: ' . $e->getMessage()])->withInput();
         }
+    }
+
+    public function shipmentDetails(Request $request)
+{
+    // Use only the factory assigned to the logged-in user.
+    $factoryId = $request->user()->mbranchlist_id;
+
+    abort_unless(
+        $factoryId,
+        403,
+        'Your account is not linked to a factory.'
+    );
+
+    // ERP tables use the existing erav database connection.
+    $erpDatabase = DB::connection('erav')->getDatabaseName();
+
+    $shipmentRows = DB::table('shipment_order_factories as link')
+        ->join(
+            'shipments as shipment',
+            'shipment.id',
+            '=',
+            'link.shipment_id'
+        )
+        ->join(
+            $erpDatabase . '.porder_pdf_list as po',
+            'po.id',
+            '=',
+            'link.purchase_order_id'
+        )
+        ->join(
+            $erpDatabase . '.mbranchlist as factory',
+            'factory.id',
+            '=',
+            'link.factory_id'
+        )
+        ->where('link.factory_id', $factoryId)
+        ->select(
+            'link.id as assignment_id',
+            'shipment.shipment_id as shipment_number',
+            'factory.br_name as factory_name',
+            'po.pdf_po_refno as po_number'
+        )
+        ->orderByDesc('shipment.id')
+        ->orderBy('link.purchase_order_id')
+        ->paginate(15);
+
+    return view(
+        'factory_portal.shipment_details',
+        compact('shipmentRows')
+    );
+}
+
+    public function createShipment()
+    {
+        return view('factory_portal.create_shipment');
     }
 }

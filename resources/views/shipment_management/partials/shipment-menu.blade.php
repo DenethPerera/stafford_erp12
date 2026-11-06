@@ -1,16 +1,25 @@
 @php
 
-    $isShipmentActive = request()->routeIs(
-        'shipment-management.*',
-        'forwarders.*'
-    );
 
-    $shipmentLinks = [
-        'shipment-management.create' => 'Create Shipment',
-        'shipment-management.scan' => 'Shipment Scan',
+    if ($isFactoryMenu ?? false) {
+        $isShipmentActive = request()->routeIs('shipment-details.*');
 
-        'forwarders.index' => 'Forwarder Details',
-    ];
+        $shipmentLinks = [
+            'shipment-details.index' => 'Shipment Details',
+        ];
+    } else {
+        $isShipmentActive = request()->routeIs(
+            'shipment-management.*',
+            'forwarders.*'
+        );
+
+        $shipmentLinks = [
+            'shipment-management.create' => 'Create Shipment',
+            'shipment-management.scan' => 'Shipment Scan',
+            'forwarders.index' => 'Forwarder Details',
+        ];
+    }
+
 @endphp
 
 <a class="nav-item px-3 py-2 {{ $isShipmentActive ? 'active' : '' }}"

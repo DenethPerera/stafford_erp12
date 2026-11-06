@@ -70,12 +70,13 @@
            <div>
                <h2 class="h5 fw-bold mb-1">{{ $shipment->shipment_id }}</h2>
                <div class="small text-muted">
-                   {{ ($shippingDetails[0]['export_import'] ?? null) ?: '-' }}
+                   {{ count($shippingDetails) === 1
+                       ? (($shippingDetails[0]['export_import'] ?? null) ?: '-') : '-' }}
                    Shipment
                </div>
            </div>
 
-           @if (!empty($shippingDetails[0]['shipment_status']))
+           @if (count($shippingDetails) === 1 && !empty($shippingDetails[0]['shipment_status']))
                <span class="badge rounded-pill bg-primary bg-opacity-10 text-primary">
                    {{ $shippingDetails[0]['shipment_status'] }}
                </span>
@@ -84,65 +85,6 @@
 
        <div class="row g-3 align-items-stretch">
        <div class="col-12 col-lg-8 d-flex flex-column gap-3">
-       @if ($shipment->import_id === null)
-    @if (count($importOptions) > 0)
-        <form
-            method="POST"
-            action="{{ route('shipment-management.save-import') }}"
-            class="row g-3 align-items-end mt-3"
-        >
-            @csrf
-
-            <input
-                type="hidden"
-                name="shipment_id"
-                value="{{ $shipment->shipment_id }}"
-            >
-
-            <div class="col-12 col-lg-9">
-                <label for="importIdInput" class="form-label">
-                    Matching Shipping Record
-                </label>
-
-                <select
-                    id="importIdInput"
-                    name="import_id"
-                    class="form-select"
-                    required
-                >
-                    <option value="">Choose a shipping record</option>
-
-                    @foreach ($importOptions as $option)
-                        <option
-                            value="{{ $option['id'] }}"
-                            @selected(
-                                (string) old('import_id') ===
-                                (string) $option['id']
-                            )
-                        >
-                            PO: {{ $option['po_numbers'] ?: 'Not available' }}
-                            | BL: {{ $option['bl_number'] ?: 'Not available' }}
-                            | Vessel: {{ $option['vessel_name'] ?: 'Not available' }}
-                            | Record: {{ $option['id'] }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div class="col-12 col-lg-3">
-                <button type="submit" class="btn btn-primary w-100">
-                    Save Shipping Record
-                </button>
-            </div>
-        </form>
-    @else
-        <div class="alert alert-info mt-3 mb-0">
-            No shipping records match this shipment's POs.
-        </div>
-    @endif
-@endif
-
-
     @foreach ($shippingDetails as $details)
         <div
             id="shipmentDetails-{{ $loop->iteration }}"

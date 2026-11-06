@@ -252,7 +252,6 @@ $factoryNames = DB::connection('erav')
 {
     $shipment = null;
     $searchError = null;
-    $importOptions = [];
     $shippingDetails = [];
     $shipmentDocuments = [];
     $containerDetails = [];
@@ -323,56 +322,89 @@ $factoryNames = DB::connection('erav')
             }
         }
 
-        $import = null;
+        // The displayed Shipment Number owns the production deliveries.
+        // PO/factory assignments are an additional check, never a lookup fallback.
+        $links = DB::table('shipment_order_factories')
+            ->where('shipment_id', $shipment->id)
+            ->get(['purchase_order_id', 'factory_id']);
 
-        if ($shipment->import_id !== null) {
-            // Use the saved import directly.
-            $import = DB::connection('erav')
-                ->table('imports as shipping')
-                ->leftJoin(
-                    'tbl_delivery_statuses as status',
-                    'status.id',
-                    '=',
-                    'shipping.delivery_status'
-                )
-                ->where('shipping.id', $shipment->import_id)
-                ->where('shipping.deleted', 0)
-                ->first([
-                    'shipping.*',
-                    'status.name as status_name',
-                ]);
-
-            if (! $import) {
-                $searchError =
-                    'The saved shipping record is missing or deleted.';
-            }
-        } else {
-            $matches = $this->matchingShipmentImports($shipment)->get();
-
-            // Each import appears once, with its matching PO numbers.
-            foreach ($matches->groupBy('id') as $importId => $rows) {
-                $match = $rows->first();
-
-                $importOptions[] = [
-                    'id' => $importId,
-                    'po_numbers' => $rows->pluck('po_no')
-                        ->unique()
-                        ->implode(', '),
-                    'bl_number' => trim((string) $match->house_bl_no),
-                    'vessel_name' => trim((string) $match->vsl_name),
-                ];
-            }
+        $allowedPairs = [];
+        foreach ($links as $link) {
+            $allowedPairs[$link->purchase_order_id . ':' . $link->factory_id] = true;
         }
 
-        if ($import) {
+        $referenceDeliveries = DB::connection('erav')
+            ->table('prodshipment_list')
+            ->where('shipment_refno', $shipment->shipment_id)
+            ->orderBy('id')
+            ->get()
+            ->filter(function ($delivery) use ($shipment) {
+                // MySQL may match different case or trailing spaces.
+                return $delivery->shipment_refno === $shipment->shipment_id;
+            });
+
+        $activeDeliveries = $referenceDeliveries->where('isoffline', 0);
+        $deliveries = $activeDeliveries->filter(function ($delivery) use ($allowedPairs) {
+            $key = $delivery->porder_pdf_list_id . ':' . $delivery->mbranchlist_id;
+
+            return isset($allowedPairs[$key]);
+        })->values();
+
+        $deliveryIds = $deliveries->pluck('id')->all();
+        $importIds = $deliveries->pluck('import_id')
+            ->filter(fn ($id) => (int) $id > 0)
+            ->map(fn ($id) => (int) $id)
+            ->unique()->values();
+
+        // Keep explicitly saved historical shipping information. Never use it
+        // to guess which production deliveries belong to this shipment.
+        $usesLegacyImport = $referenceDeliveries->isEmpty()
+            && (int) ($shipment->import_id ?? 0) > 0;
+
+        if ($usesLegacyImport) {
+            $importIds = collect([(int) $shipment->import_id]);
+        }
+
+        $imports = DB::connection('erav')->table('imports as shipping')
+            ->leftJoin('tbl_delivery_statuses as status', 'status.id', '=', 'shipping.delivery_status')
+            ->whereIn('shipping.id', $importIds->all())
+            ->where('shipping.deleted', 0)
+            ->select('shipping.*', 'status.name as status_name')
+            ->orderBy('shipping.id')
+            ->get();
+
+        $warnings = [];
+        if ($imports->count() !== $importIds->count()) {
+            $warnings[] = $usesLegacyImport
+                ? 'The saved shipping record is missing or deleted.'
+                : 'One or more linked shipping records are missing or deleted.';
+        }
+        if ($usesLegacyImport) {
+            $warnings[] = 'Historical shipping information is shown. Production quantities require records linked by Shipment Number.';
+        } elseif ($referenceDeliveries->isEmpty()) {
+            $warnings[] = 'No production shipment records are linked to this Shipment ID.';
+        }
+        if ($activeDeliveries->count() !== $deliveries->count()) {
+            $warnings[] = 'Some production shipment records have a PO or factory that is not assigned to this shipment and were excluded.';
+        }
+        if ($deliveries->contains(fn ($delivery) => (int) $delivery->import_id <= 0)) {
+            $warnings[] = 'Shipping information is not available for production shipments without a linked Import ID. Their quantities are included.';
+        }
+        if ($warnings) {
+            $searchError = implode(' ', $warnings);
+        }
+
+        $emptyDetails = $details;
+        foreach ($imports as $import) {
+            // Each import gets a separate card; never inherit another import's fields.
+            $details = $emptyDetails;
+            $details['import_id'] = (int) $import->id;
             $keyVal = (string) ($import->key_val ?? '');
-
-if ($keyVal === '0') {
-    $details['export_import'] = 'Import';
-} elseif ($keyVal === '1') {
-    $details['export_import'] = 'Export';
-}
-
+            if ($keyVal === '0') {
+                $details['export_import'] = 'Import';
+            } elseif ($keyVal === '1') {
+                $details['export_import'] = 'Export';
+            }
 
             $fields = [
                 'bl_number' => 'house_bl_no',
@@ -383,129 +415,54 @@ if ($keyVal === '0') {
                 'eta' => 'port_eta_date',
                 'shipment_status' => 'status_name',
             ];
-
             foreach ($fields as $displayField => $databaseField) {
                 $value = trim((string) ($import->$databaseField ?? ''));
-
-                $details[$displayField] = $value !== ''
-                    ? $value
-                    : null;
+                $details[$displayField] = $value !== '' ? $value : null;
             }
 
-            $numbers = [];
-
-            $containers = DB::connection('erav')
-                ->table('imports_container_numbers')
+            $containers = DB::connection('erav')->table('imports_container_numbers')
                 ->where('import_id', $import->id)
-                ->orderBy('id')
-                ->pluck('container_no');
+                ->orderBy('id')->pluck('container_no');
 
-            foreach ($containers as $container) {
-                $number = trim((string) $container);
-
-                if ($number !== '') {
-                    $numbers[] = $number;
-                }
-            }
-
-            if (count($numbers) > 0) {
-                $details['container_number'] = implode(
-                    ', ',
-                    array_unique($numbers)
+            $containerNumbers = $this->usableContainerNumbers($containers);
+            if ($containerNumbers->isEmpty()) {
+                $containerNumbers = $this->usableContainerNumbers(
+                    $deliveries->where('import_id', $import->id)->pluck('ship_container_no')
                 );
             }
-
-            // Use container numbers from the saved import first.
-$containerNumbers = [];
-
-foreach ($containers as $container) {
-    $number = strtoupper(trim((string) $container));
-
-    if (! in_array($number, ['', '-', 'N/A', 'NA', 'NULL'], true)) {
-        // Using the number as the key prevents duplicate containers.
-        $containerNumbers[$number] = $number;
-    }
-}
-
-// Use production shipment records only when no usable numbers were found.
-if (count($containerNumbers) === 0) {
-    $shipmentLinks = DB::table('shipment_order_factories')
-        ->where('shipment_id', $shipment->id)
-        ->distinct()
-        ->get(['purchase_order_id', 'factory_id']);
-
-    foreach ($shipmentLinks as $link) {
-        $fallbackNumbers = DB::connection('erav')
-            ->table('prodshipment_list')
-            ->where('import_id', $import->id)
-            ->where('porder_pdf_list_id', $link->purchase_order_id)
-            ->where('mbranchlist_id', $link->factory_id)
-            ->orderBy('id')
-            ->pluck('ship_container_no');
-
-        foreach ($fallbackNumbers as $container) {
-            $number = strtoupper(trim((string) $container));
-
-            if (! in_array($number, ['', '-', 'N/A', 'NA', 'NULL'], true)) {
-                $containerNumbers[$number] = $number;
+            if ($containerNumbers->isNotEmpty()) {
+                $details['container_number'] = $containerNumbers->implode(', ');
             }
-        }
-    }
-}
+            foreach ($containerNumbers as $number) {
+                $containerDetails[] = [
+                    'import_id' => (int) $import->id,
+                    'container_no' => $number,
+                    'size_type' => trim((string) ($import->container_type ?? '')),
+                ];
+            }
 
-// Prepare one row for each unique container.
-foreach ($containerNumbers as $number) {
-    $containerDetails[] = [
-        'container_no' => $number,
-        'size_type' => trim((string) ($import->container_type ?? '')),
-    ];
-}
-
-
-
-
-
-
-
-
-            // Invalid dates and zero dates remain unavailable.
+            // Preserve the current handling of invalid and zero dates.
             foreach (['etd', 'eta'] as $field) {
                 $value = $details[$field];
-
                 if ($value !== null) {
-                    $date = \DateTimeImmutable::createFromFormat(
-                        '!Y-m-d',
-                        $value
-                    );
-
+                    $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
                     if (! $date || $date->format('Y-m-d') !== $value) {
                         $details[$field] = null;
                     }
                 }
             }
-
             if ($details['etd'] && $details['eta']) {
                 $etd = new \DateTimeImmutable($details['etd']);
                 $eta = new \DateTimeImmutable($details['eta']);
-
                 if ($eta >= $etd) {
-                    $details['transit_time'] =
-                        $etd->diff($eta)->days.' days';
+                    $details['transit_time'] = $etd->diff($eta)->days . ' days';
                 }
             }
+            $shippingDetails[] = $details;
         }
-         if ($shipment->import_id !== null) {
-            $containers = DB::connection('erav')
-                ->table('imports_container_numbers')
-                ->where('import_id', $shipment->import_id)
-                ->orderBy('id')
-                ->pluck('container_no');
-
-            if ($containers->isNotEmpty()) {
-                $details['container_number'] = $containers->implode(', ');
-            }
+        if ($imports->isEmpty()) {
+            $shippingDetails[] = $emptyDetails;
         }
-
 
         // The ERP tables use the erav database.
 // Both configured connections currently use the same MySQL server.
@@ -561,7 +518,7 @@ $consolidationRows = DB::table('shipments as shipment')
 // Read actual shipping rows separately so deliveries do not multiply PO items.
 $shippingRows = collect();
 
-if ($import) {
+if ($deliveries->isNotEmpty()) {
     $shippingRows = DB::table('shipment_order_factories as link')
         ->join($erpDatabase . '.prodshipment_list as delivery', function ($join) {
             $join->on('delivery.porder_pdf_list_id', '=', 'link.purchase_order_id')
@@ -589,7 +546,7 @@ if ($import) {
             'production.currency_type'
         )
         ->where('link.shipment_id', $shipment->id)
-        ->where('delivery.import_id', $import->id)
+        ->whereIn('delivery.id', $deliveryIds)
         ->where('delivery.isoffline', 0)
         ->where('shipped.qrycancel', 0)
         ->where('item.qrycancel', 0)
@@ -708,8 +665,6 @@ if ($uniqueItems->isNotEmpty() && ! $hasMissingQuantity) {
 
 
 
-        // Preserve the existing details card and missing-value display.
-        $shippingDetails[] = $details;
     }
 
 
@@ -720,7 +675,6 @@ if ($uniqueItems->isNotEmpty() && ! $hasMissingQuantity) {
         'shipmentId',
         'searchError',
         'shippingDetails',
-        'importOptions',
         'shipmentDocuments',
         'containerDetails',
         'consolidationFactories',
@@ -786,100 +740,18 @@ private function shipmentShippingTotals($records)
     return $totals;
 }
 
-private function matchingShipmentImports($shipment)
+private function usableContainerNumbers($numbers)
 {
-    $purchaseOrderIds = DB::table('shipment_order_factories')
-        ->where('shipment_id', $shipment->id)
-        ->distinct()
-        ->pluck('purchase_order_id');
-
-    $poNumbers = DB::connection('erav')
-        ->table('porder_pdf_list')
-        ->whereIn('id', $purchaseOrderIds)
-        ->whereNotNull('pdf_po_refno')
-        ->where('pdf_po_refno', '!=', '')
-        ->distinct()
-        ->pluck('pdf_po_refno');
-
-    return DB::connection('erav')
-        ->table('imports as shipping')
-        ->join(
-            'imports_po_nos as links',
-            'links.import_id',
-            '=',
-            'shipping.id'
-        )
-        ->where('shipping.deleted', 0)
-        ->whereIn('links.po_no', $poNumbers)
-        ->select(
-            'shipping.id',
-            'shipping.house_bl_no',
-            'shipping.vsl_name',
-            'links.po_no'
-        )
-        ->distinct()
-        ->orderBy('shipping.id')
-        ->orderBy('links.po_no');
+    return $numbers->map(fn ($number) => strtoupper(trim((string) $number)))
+        ->reject(fn ($number) => in_array($number, ['', '-', 'N/A', 'NA', 'NULL'], true))
+        ->unique()->values();
 }
 
 public function saveShipmentImport(Request $request)
 {
-    $data = $request->validate([
-        'shipment_id' => 'required|string|max:255',
-        'import_id' => 'required|integer|min:1',
-    ]);
-
-    $shipment = DB::table('shipments')
-        ->where('shipment_id', $data['shipment_id'])
-        ->first();
-
-    if (! $shipment || $shipment->shipment_id !== $data['shipment_id']) {
-        abort(404, 'Shipment not found.');
-    }
-
-    if ($shipment->import_id !== null) {
-        throw ValidationException::withMessages([
-            'import_id' =>
-                'This shipment already has a saved shipping record. Search again to view it.',
-        ]);
-    }
-
-    // Check the selected record against the shipment POs again.
-    $validImport = $this->matchingShipmentImports($shipment)
-        ->where('shipping.id', $data['import_id'])
-        ->exists();
-
-    if (! $validImport) {
-        throw ValidationException::withMessages([
-            'import_id' =>
-                'Select a shipping record matching the shipment POs.',
-        ]);
-    }
-
-    // Prevent a stale form from overwriting another user's saved link.
-    $updated = DB::table('shipments')
-        ->where('id', $shipment->id)
-        ->whereNull('import_id')
-        ->update([
-            'import_id' => $data['import_id'],
-            'updated_at' => now(),
-        ]);
-
-    if ($updated === 0) {
-        throw ValidationException::withMessages([
-            'import_id' =>
-                'The shipment was linked by another user. Search again to view it.',
-        ]);
-    }
-
-    return redirect()->route('shipment-management.scan', [
-        'shipment_id' => $shipment->shipment_id,
-    ])->with('success', 'Shipping record saved successfully.');
+    // Keep the old endpoint explicit for stale forms, without changing legacy data.
+    abort(410, 'Shipping records are now linked through Order Delivery.');
 }
-
-
-
-
 
     public function forwarderLogin()
     {

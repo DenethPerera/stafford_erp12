@@ -685,6 +685,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 label.htmlFor = checkbox.id;
                 label.className = 'form-check-label';
                 label.textContent = purchaseOrder.pdf_po_refno;
+
+                // Show the related factory codes beside this PO.
+                const factoryCodes = [];
+                for (const link of data.factory_links) {
+                    if (String(link.purchase_order_id) === id && link.br_code) {
+                        factoryCodes.push(link.br_code);
+                    }
+                }
+                const factoryCode = document.createElement('span');
+                factoryCode.className = 'ms-4 text-muted d-inline-block';
+                factoryCode.textContent = factoryCodes.join(', ');
+                label.append(factoryCode);
+
                 row.append(checkbox, label);
                 purchaseOrderOptions.append(row);
             }

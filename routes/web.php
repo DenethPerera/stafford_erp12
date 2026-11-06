@@ -130,6 +130,9 @@ Route::delete(
 
         Route::get('factory-portal', [\App\Http\Controllers\FactoryPortalController::class, 'index'])->name('factory-portal.index');
         Route::post('factory-portal/{id}/store-po', [\App\Http\Controllers\FactoryPortalController::class, 'storePurchaseOrder'])->name('factory-portal.store-po');
+
+        Route::get('shipment-details',[\App\Http\Controllers\FactoryPortalController::class, 'shipmentDetails'])->name('shipment-details.index');
+        Route::get('create-shipment', [\App\Http\Controllers\FactoryPortalController::class, 'createShipment'])->name('create-shipment.index');
     });
 
     // View-Only for Orders & Purchase Orders

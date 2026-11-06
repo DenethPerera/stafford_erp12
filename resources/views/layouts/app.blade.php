@@ -531,6 +531,24 @@
                         </div>
                         <span class="sidebar-text flex-grow-1">Shipment Documents</span>
                     </a>
+
+                    <a href="{{ route('shipment-details.index') }}"class="nav-item px-3 py-2 {{ request()->routeIs('shipment-details.*') ? 'active' : '' }}"title="Shipment Details">
+                        <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                            <i class="bi bi-truck fs-5" style="color: #00A39A;"></i>
+                        </div>
+                        <span class="sidebar-text flex-grow-1">Shipment Details</span>
+                    </a>
+
+                    <a href="{{ route('create-shipment.index') }}"
+                       class="nav-item px-3 py-2 {{ request()->routeIs('create-shipment.*') ? 'active' : '' }}"
+                       title="Create Shipment">
+                        <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                            <i class="bi bi-plus-circle fs-5" style="color: #00A39A;"></i>
+                        </div>
+                        <span class="sidebar-text flex-grow-1">Create Shipment</span>
+                    </a>
+
+
                     @endrole
 
                     @role('lab')
@@ -813,7 +831,27 @@
                     </div>
                     <span>Shipment Documents</span>
                 </a>
+
+                <a href="{{ route('shipment-details.index') }}"class="nav-item px-3 py-2 {{ request()->routeIs('shipment-details.*') ? 'active' : '' }}"title="Shipment Details">
+                   <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                       <i class="bi bi-truck fs-5" style="color: #00A39A;"></i>
+                   </div>
+                   <span>Shipment Details</span>
+                </a>
+
+                <a href="{{ route('create-shipment.index') }}"
+                   class="nav-item px-3 py-2 {{ request()->routeIs('create-shipment.*') ? 'active' : '' }}"
+                   title="Create Shipment">
+                    <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                        <i class="bi bi-plus-circle fs-5" style="color: #00A39A;"></i>
+                    </div>
+                    <span>Create Shipment</span>
+                </a>
+
+
                 @endrole
+
+
 
                 @role('lab')
                 <a href="{{ route('lab.pos.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('lab.pos.*') ? 'active' : '' }}">
