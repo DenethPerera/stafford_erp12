@@ -61,22 +61,37 @@ class ShipmentManagementController extends Controller
 
 
         // Collect factory IDs from the displayed shipments.
-$factoryIds = [];
+        $factoryIds = [];
+        foreach ($shipments as $shipment) {
+            foreach ($shipment->factory_ids ?? [] as $factoryId) {
+                $factoryIds[] = $factoryId;
+            }
+        }
 
-foreach ($shipments as $shipment) {
-    foreach ($shipment->factory_ids ?? [] as $factoryId) {
-        $factoryIds[] = $factoryId;
-    }
-}
+        $factoryNames = DB::connection('erav')->table('mbranchlist')
+            ->whereIn('id', $factoryIds)
+            ->pluck('br_name', 'id');
 
-// Get each factory name using its ID.
-$factoryNames = DB::connection('erav')
-    ->table('mbranchlist')
-    ->whereIn('id', $factoryIds)
-    ->pluck('br_name', 'id');
+        // Read only the saved PO assignments for this page of shipments.
+        $shipmentLinks = DB::table('shipment_order_factories')
+            ->whereIn('shipment_id', $shipments->pluck('id'))
+            ->orderBy('purchase_order_id')
+            ->get();
+
+        $purchaseOrderNames = DB::connection('erav')->table('porder_pdf_list')
+            ->whereIn('id', $shipmentLinks->pluck('purchase_order_id'))
+            ->pluck('pdf_po_refno', 'id');
+
+        // Keep each PO under its own shipment and factory.
+        $factoryPurchaseOrders = [];
+        foreach ($shipmentLinks as $link) {
+            $factoryPurchaseOrders[$link->shipment_id][$link->factory_id][] =
+                $purchaseOrderNames[$link->purchase_order_id] ?? 'PO #' . $link->purchase_order_id;
+        }
 
         return view('shipment_management.create', compact(
-            'countries', 'buyers', 'nextShipmentNumbers','shipments','factoryNames', 'shipmentSearch'
+            'countries', 'buyers', 'nextShipmentNumbers', 'shipments', 'factoryNames',
+            'shipmentSearch', 'factoryPurchaseOrders'
         ));
 
 

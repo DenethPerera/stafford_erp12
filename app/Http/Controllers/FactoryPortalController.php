@@ -447,57 +447,61 @@ class FactoryPortalController extends Controller
     }
 
     public function shipmentDetails(Request $request)
-{
-    // Use only the factory assigned to the logged-in user.
-    $factoryId = $request->user()->mbranchlist_id;
-
-    abort_unless(
-        $factoryId,
-        403,
-        'Your account is not linked to a factory.'
-    );
-
-    // ERP tables use the existing erav database connection.
-    $erpDatabase = DB::connection('erav')->getDatabaseName();
-
-    $shipmentRows = DB::table('shipment_order_factories as link')
-        ->join(
-            'shipments as shipment',
-            'shipment.id',
-            '=',
-            'link.shipment_id'
-        )
-        ->join(
-            $erpDatabase . '.porder_pdf_list as po',
-            'po.id',
-            '=',
-            'link.purchase_order_id'
-        )
-        ->join(
-            $erpDatabase . '.mbranchlist as factory',
-            'factory.id',
-            '=',
-            'link.factory_id'
-        )
-        ->where('link.factory_id', $factoryId)
-        ->select(
-            'link.id as assignment_id',
-            'shipment.shipment_id as shipment_number',
-            'factory.br_name as factory_name',
-            'po.pdf_po_refno as po_number'
-        )
-        ->orderByDesc('shipment.id')
-        ->orderBy('link.purchase_order_id')
-        ->paginate(15);
-
-    return view(
-        'factory_portal.shipment_details',
-        compact('shipmentRows')
-    );
-}
-
-    public function createShipment()
     {
-        return view('factory_portal.create_shipment');
+        // Use only the factory assigned to the logged-in user.
+        $factoryId = $request->user()->mbranchlist_id;
+        abort_unless($factoryId, 403, 'Your account is not linked to a factory.');
+
+        $validated = $request->validate([
+            'shipment_search' => 'nullable|string|max:255',
+        ]);
+        $shipmentSearch = trim($validated['shipment_search'] ?? '');
+
+        // ERP tables use the existing erav database connection.
+        $erpDatabase = DB::connection('erav')->getDatabaseName();
+
+        $shipmentQuery = DB::table('shipment_order_factories as link')
+            ->join('shipments as shipment', 'shipment.id', '=', 'link.shipment_id')
+            ->join($erpDatabase . '.porder_pdf_list as po', 'po.id', '=', 'link.purchase_order_id')
+            ->join($erpDatabase . '.mbranchlist as factory', 'factory.id', '=', 'link.factory_id')
+            ->where('link.factory_id', $factoryId)
+            ->select(
+                'link.id as assignment_id',
+                'shipment.shipment_id as shipment_number',
+                'factory.br_name as factory_name',
+                'po.pdf_po_refno as po_number'
+            );
+
+        // A blank search shows all shipments for this factory.
+        if ($shipmentSearch !== '') {
+            $shipmentQuery->where('shipment.shipment_id', 'like', '%' . $shipmentSearch . '%');
+        }
+
+        $shipmentRows = $shipmentQuery->orderByDesc('shipment.id')
+            ->orderBy('link.purchase_order_id')
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('factory_portal.shipment_details', compact('shipmentRows', 'shipmentSearch'));
+    }
+
+    public function createShipment(Request $request)
+    {
+        $factoryId = $request->user()->mbranchlist_id;
+        abort_unless($factoryId, 403, 'Your account is not linked to a factory.');
+
+        $factoryName = EravBranch::where('id', $factoryId)->value('br_name');
+
+        // Show only purchase orders assigned to this factory in saved shipments.
+        $purchaseOrderIds = DB::table('shipment_order_factories')
+            ->where('factory_id', $factoryId)
+            ->pluck('purchase_order_id');
+
+        $purchaseOrders = DB::connection('erav')->table('porder_pdf_list')
+            ->whereIn('id', $purchaseOrderIds)
+            ->orderBy('pdf_po_refno')
+            ->pluck('pdf_po_refno', 'id');
+
+        return view('factory_portal.create_shipment', compact('factoryName', 'purchaseOrders'));
     }
 }

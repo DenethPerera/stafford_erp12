@@ -65,6 +65,7 @@ class ShipmentScanDocumentsTest extends TestCase
         });
         Schema::connection('erav')->create('prodshipment_list', function (Blueprint $table) {
             $table->id();
+            $table->string('shipment_refno', 255);
             $table->integer('import_id');
             $table->integer('porder_pdf_list_id');
             $table->integer('mbranchlist_id');

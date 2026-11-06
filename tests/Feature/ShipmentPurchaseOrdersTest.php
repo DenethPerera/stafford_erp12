@@ -227,6 +227,89 @@ class ShipmentPurchaseOrdersTest extends TestCase
         }
     }
 
+    public function test_created_shipments_show_only_saved_purchase_orders_under_each_factory(): void
+    {
+        $first = $this->createSearchShipment('AF-000001');
+        $first->update(['shipment_type' => 'consolidated', 'factory_ids' => [3, 29]]);
+        $second = $this->createSearchShipment('AF-000002');
+
+        DB::table('shipment_order_factories')->insert([
+            ['shipment_id' => $first->id, 'purchase_order_id' => 763, 'factory_id' => 3],
+            ['shipment_id' => $first->id, 'purchase_order_id' => 1394, 'factory_id' => 29],
+            ['shipment_id' => $second->id, 'purchase_order_id' => 1394, 'factory_id' => 3],
+        ]);
+        $this->signInAdmin();
+
+        $response = $this->get(route('shipment-management.create'))->assertOk();
+        $this->assertSame([
+            $first->id => [3 => ['PO-763'], 29 => ['PO-1394']],
+            $second->id => [3 => ['PO-1394']],
+        ], $response->viewData('factoryPurchaseOrders'));
+        $response->assertSee('Factories / POs')
+            ->assertSee('<details class="mb-2">', false)
+            ->assertSee('<li>PO-763</li>', false)
+            ->assertSee('<li>PO-1394</li>', false);
+
+        // Searching must not load assignments from shipments outside the results.
+        $filtered = $this->get(route('shipment-management.create', ['shipment_search' => 'AF-000001']))
+            ->assertOk();
+        $this->assertSame([
+            $first->id => [3 => ['PO-763'], 29 => ['PO-1394']],
+        ], $filtered->viewData('factoryPurchaseOrders'));
+    }
+
+    public function test_created_shipments_handle_missing_purchase_orders_and_empty_assignments(): void
+    {
+        $shipment = $this->createSearchShipment('AF-000001');
+        $shipment->update(['shipment_type' => 'consolidated', 'factory_ids' => [3, 29]]);
+        DB::table('shipment_order_factories')->insert([
+            'shipment_id' => $shipment->id,
+            'purchase_order_id' => 9999,
+            'factory_id' => 3,
+        ]);
+        $this->signInAdmin();
+
+        $this->get(route('shipment-management.create'))
+            ->assertOk()
+            ->assertSee('<li>PO #9999</li>', false)
+            ->assertSee('No purchase orders assigned.');
+    }
+
+    public function test_factory_shipment_form_only_lists_its_own_assigned_purchase_orders(): void
+    {
+        $shipment = $this->createSearchShipment('AF-000001');
+        DB::table('shipment_order_factories')->insert([
+            ['shipment_id' => $shipment->id, 'purchase_order_id' => 763, 'factory_id' => 3],
+            ['shipment_id' => $shipment->id, 'purchase_order_id' => 1394, 'factory_id' => 29],
+        ]);
+        $this->withMiddleware();
+
+        foreach ([3 => ['PO-763', 'PO-1394'], 29 => ['PO-1394', 'PO-763']] as $factoryId => $poNumbers) {
+            $user = new User(['name' => 'Factory User', 'mbranchlist_id' => $factoryId]);
+            $user->id = 1;
+            $user->setRelation('roles', collect([new Role(['name' => 'factory', 'guard_name' => 'web'])]));
+            $this->actingAs($user);
+
+            // A factory ID in the URL must not change which factory's POs are shown.
+            $this->get(route('create-shipment.index', ['factory_id' => 999]))
+                ->assertOk()
+                ->assertSee('Order Delivery')
+                ->assertSee('value="Factory ' . $factoryId . '"', false)
+                ->assertSee($poNumbers[0])
+                ->assertDontSee($poNumbers[1]);
+        }
+    }
+
+    public function test_factory_shipment_form_requires_an_assigned_factory(): void
+    {
+        $user = new User(['name' => 'Unassigned Factory User']);
+        $user->id = 1;
+        $user->setRelation('roles', collect([new Role(['name' => 'factory', 'guard_name' => 'web'])]));
+        $this->withMiddleware()->actingAs($user);
+
+        $this->get(route('create-shipment.index'))->assertForbidden();
+    }
+
     private function signInAdmin(): void
     {
         $this->withMiddleware();
