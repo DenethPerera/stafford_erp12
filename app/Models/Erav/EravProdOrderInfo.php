@@ -8,6 +8,7 @@ class EravProdOrderInfo extends Model
 {
     protected $connection = 'erav';
     protected $table = 'prodorder_info';
+    protected $primaryKey = 'pack_no';
     public $timestamps = false;
     protected $guarded = [];
 

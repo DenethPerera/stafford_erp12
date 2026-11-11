@@ -21,6 +21,12 @@ class ShipmentManagementController extends Controller
 
     public function create(Request $request)
     {
+        return $this->shipmentForm($request);
+    }
+
+    // Create and Edit use the same form and dropdown lists.
+    private function shipmentForm(Request $request, ?Shipment $editingShipment = null)
+    {
         $validated = $request->validate([
             'shipment_search' => 'nullable|string|max:255',
         ]);
@@ -91,7 +97,7 @@ class ShipmentManagementController extends Controller
 
         return view('shipment_management.create', compact(
             'countries', 'buyers', 'nextShipmentNumbers', 'shipments', 'factoryNames',
-            'shipmentSearch', 'factoryPurchaseOrders'
+            'shipmentSearch', 'factoryPurchaseOrders', 'editingShipment'
         ));
 
 
@@ -142,12 +148,18 @@ class ShipmentManagementController extends Controller
 
     public function store(Request $request)
     {
+        return $this->saveShipment($request);
+    }
+
+    // Validate both forms in one place so Create and Edit follow the same rules.
+    private function saveShipment(Request $request, ?Shipment $editingShipment = null)
+    {
         // 1. Check the form fields.
         $data = $request->validate([
             'country_of_origin' => ['required', 'string', 'max:10', Rule::exists(Country::class, 'country_code')],
             'buyer_id' => 'required|integer|exists:erav.salescustomerlist,customer_id,isoffline,0',
             'shipment_id_mode' => 'required|in:manual,auto',
-            'shipment_id' => 'required|string|max:255|unique:shipments,shipment_id',
+            'shipment_id' => ['required', 'string', 'max:255', Rule::unique('shipments', 'shipment_id')->ignore($editingShipment?->id)],
             'purchase_order_ids' => 'required|array|min:1',
             'purchase_order_ids.*' => 'required|integer|distinct',
             'shipment_type' => 'required|in:individual,consolidated',
@@ -212,8 +224,9 @@ class ShipmentManagementController extends Controller
 
         // 4. Save one shipment and its pairs together.
         try {
-            $shipment = DB::transaction(function () use ($data, $purchaseOrderIds, $factoryIds, $selectedLinks) {
-                $shipment = Shipment::create([
+            $shipment = DB::transaction(function () use ($data, $purchaseOrderIds, $factoryIds, $selectedLinks, $editingShipment) {
+                $shipment = $editingShipment ?? new Shipment();
+                $shipment->fill([
                     'country_of_origin' => $data['country_of_origin'],
                     'buyer_id' => $data['buyer_id'],
                     'shipment_id' => $data['shipment_id'],
@@ -222,6 +235,10 @@ class ShipmentManagementController extends Controller
                     'shipment_type' => $data['shipment_type'],
                     'factory_ids' => $factoryIds,
                 ]);
+                $shipment->save();
+
+                // Replace the old assignments when editing an unused shipment.
+                DB::table('shipment_order_factories')->where('shipment_id', $shipment->id)->delete();
 
                 foreach ($selectedLinks as $link) {
                     DB::table('shipment_order_factories')->insert([
@@ -239,8 +256,12 @@ class ShipmentManagementController extends Controller
             ]);
         }
 
-        return redirect()->route('shipment-management.create')
-            ->with('success', 'Shipment '.$shipment->shipment_id.' created successfully.');
+        $message = 'Shipment '.$shipment->shipment_id.' created successfully.';
+        if ($editingShipment) {
+            $message = 'Shipment '.$shipment->shipment_id.' updated successfully.';
+        }
+
+        return redirect()->route('shipment-management.create')->with('success', $message);
     }
 
     public function show(string $id)
@@ -248,19 +269,62 @@ class ShipmentManagementController extends Controller
         //
     }
 
-    public function edit(string $id)
+    public function edit(Request $request, string $id)
     {
-        //
+        $shipment = Shipment::findOrFail($id);
+
+        if ($this->hasLinkedRecords($shipment)) {
+            return redirect()->route('shipment-management.create')
+                ->with('error', 'This shipment has linked deliveries or documents and cannot be edited.');
+        }
+
+        return $this->shipmentForm($request, $shipment);
     }
 
     public function update(Request $request, string $id)
     {
-        //
+        $shipment = Shipment::findOrFail($id);
+
+        if ($this->hasLinkedRecords($shipment)) {
+            return redirect()->route('shipment-management.create')
+                ->with('error', 'This shipment has linked deliveries or documents and cannot be edited.');
+        }
+
+        return $this->saveShipment($request, $shipment);
     }
 
     public function destroy(string $id)
     {
-        //
+        $shipment = Shipment::findOrFail($id);
+
+        if ($this->hasLinkedRecords($shipment)) {
+            return redirect()->route('shipment-management.create')
+                ->with('error', 'This shipment has linked deliveries or documents and cannot be deleted.');
+        }
+
+        // The database also deletes this shipment's PO/factory assignments.
+        $shipment->delete();
+
+        return redirect()->route('shipment-management.create')
+            ->with('success', 'Shipment '.$shipment->shipment_id.' deleted successfully.');
+    }
+
+    private function hasLinkedRecords(Shipment $shipment): bool
+    {
+        if (! empty($shipment->import_id)) {
+            return true;
+        }
+
+        if (DB::connection('erav')->table('prodshipment_list')
+            ->where('shipment_refno', $shipment->shipment_id)->exists()) {
+            return true;
+        }
+
+        if (DB::table('shipment_documents')->where('shipment_id', $shipment->shipment_id)->exists()) {
+            return true;
+        }
+
+        return DB::table('forwarder_documents')->where('shipment_id', $shipment->shipment_id)->exists();
     }
 
     public function scan(Request $request)

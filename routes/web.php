@@ -65,6 +65,7 @@ Route::delete(
 
         Route::prefix('master-data')->name('master-data.')->group(function () {
             Route::resource('seasons', \App\Http\Controllers\SeasonController::class);
+            Route::resource('countries', \App\Http\Controllers\CountryController::class)->only(['index', 'store']);
         });
     });
 
@@ -131,8 +132,15 @@ Route::delete(
         Route::get('factory-portal', [\App\Http\Controllers\FactoryPortalController::class, 'index'])->name('factory-portal.index');
         Route::post('factory-portal/{id}/store-po', [\App\Http\Controllers\FactoryPortalController::class, 'storePurchaseOrder'])->name('factory-portal.store-po');
 
+        Route::view('import-export', 'factory_portal.import_export')->name('import-export.index');
+
         Route::get('shipment-details',[\App\Http\Controllers\FactoryPortalController::class, 'shipmentDetails'])->name('shipment-details.index');
         Route::get('create-shipment', [\App\Http\Controllers\FactoryPortalController::class, 'createShipment'])->name('create-shipment.index');
+        Route::get('create-shipment/history', [\App\Http\Controllers\FactoryPortalController::class, 'shipmentHistory'])->name('create-shipment.history');
+        Route::get('create-shipment/{id}/edit', [\App\Http\Controllers\FactoryPortalController::class, 'editShipment'])->name('create-shipment.edit');
+        Route::put('create-shipment/{id}', [\App\Http\Controllers\FactoryPortalController::class, 'updateShipment'])->name('create-shipment.update');
+        Route::delete('create-shipment/{id}', [\App\Http\Controllers\FactoryPortalController::class, 'destroyShipment'])->name('create-shipment.destroy');
+        Route::post('create-shipment', [\App\Http\Controllers\FactoryPortalController::class, 'storeShipment'])->name('create-shipment.store');
     });
 
     // View-Only for Orders & Purchase Orders

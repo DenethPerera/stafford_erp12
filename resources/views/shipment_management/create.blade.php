@@ -14,18 +14,22 @@
 @endsection --}}
 @extends('layouts.app')
 
-@section('header', 'Create New Shipment')
+@section('header', $editingShipment ? 'Edit Shipment' : 'Create New Shipment')
 
 @section('content')
 
 
 @php
     // Restore the form after a validation error.
-    $oldPurchaseOrderIds = array_values((array) old('purchase_order_ids', []));
-    $oldFactoryIds = old('shipment_type', 'individual') === 'individual'
-        ? [old('factory_id', '')]
-        : array_values((array) old('factory_ids', []));
-    $manualShipmentId = old('shipment_id_mode') === 'manual' ? old('shipment_id', '') : '';
+    $savedPurchaseOrderIds = $editingShipment->purchase_order_id ?? [];
+    $savedFactoryIds = $editingShipment->factory_ids ?? [];
+    $shipmentType = old('shipment_type', $editingShipment->shipment_type ?? 'individual');
+    $shipmentIdMode = old('shipment_id_mode', $editingShipment->shipment_id_mode ?? 'auto');
+    $oldPurchaseOrderIds = array_values((array) old('purchase_order_ids', $savedPurchaseOrderIds));
+    $oldFactoryIds = $shipmentType === 'individual'
+        ? [old('factory_id', $savedFactoryIds[0] ?? '')]
+        : array_values((array) old('factory_ids', $savedFactoryIds));
+    $manualShipmentId = old('shipment_id', $editingShipment->shipment_id ?? '');
 @endphp
 
 
@@ -177,15 +181,18 @@
 
 <div class="shipment-details">
 
-    <h2>Shipment Details</h2>
+    <h2>{{ $editingShipment ? 'Edit Shipment' : 'Shipment Details' }}</h2>
 
 
     <form id="shipment-form"
     method="POST"
-    action="{{ route('shipment-management.store') }}"
+    action="{{ $editingShipment ? route('shipment-management.update', $editingShipment->id) : route('shipment-management.store') }}"
     novalidate >
 
     @csrf
+    @if($editingShipment)
+        @method('PUT')
+    @endif
 
         <div class="shipment-fields">
 
@@ -219,7 +226,7 @@
     @foreach($countries as $code => $name)
         <option
             value="{{ $code }}"
-            @selected(old('country_of_origin') === (string) $code)
+            @selected(old('country_of_origin', $editingShipment->country_of_origin ?? '') === (string) $code)
         >
             {{ $name }} ({{ $code }})
         </option>
@@ -234,7 +241,7 @@
         <select id="buyer-id" name="buyer_id" class="form-select" required>
             <option value="">Select a buyer</option>
             @foreach($buyers as $id => $name)
-                <option value="{{ $id }}" @selected((string) old('buyer_id', '') === (string) $id)>
+                <option value="{{ $id }}" @selected((string) old('buyer_id', $editingShipment->buyer_id ?? '') === (string) $id)>
                     {{ $name }}
                 </option>
             @endforeach
@@ -253,7 +260,7 @@
         name="shipment_id"
         type="text"
         class="form-control bg-light"
-        value="{{ old('shipment_id', '') }}"
+        value="{{ old('shipment_id', $editingShipment->shipment_id ?? '') }}"
         placeholder="Enter Shipment ID"
         aria-describedby="shipment-id-help"
         readonly
@@ -265,12 +272,12 @@
         <div class="d-flex flex-wrap gap-3">
             <div class="form-check">
                 <input id="manual-id" type="radio" name="shipment_id_mode" value="manual"
-                    class="form-check-input" @checked(old('shipment_id_mode', 'auto') === 'manual')>
+                    class="form-check-input" @checked($shipmentIdMode === 'manual')>
                 <label for="manual-id" class="form-check-label">Manual Entry</label>
             </div>
             <div class="form-check">
                 <input id="auto-id" type="radio" name="shipment_id_mode" value="auto"
-                    class="form-check-input" @checked(old('shipment_id_mode', 'auto') === 'auto')>
+                    class="form-check-input" @checked($shipmentIdMode === 'auto')>
                 <label for="auto-id" class="form-check-label">Auto Generate</label>
             </div>
         </div>
@@ -330,7 +337,7 @@
                         name="shipment_type"
                         value="individual"
                         class="form-check-input"
-                        @checked(old('shipment_type', 'individual') === 'individual')
+                        @checked($shipmentType === 'individual')
                     >
 
                     <label for="individual" class="form-check-label">
@@ -345,7 +352,7 @@
                         name="shipment_type"
                         value="consolidated"
                         class="form-check-input"
-                        @checked(old('shipment_type', 'individual') === 'consolidated')
+                        @checked($shipmentType === 'consolidated')
                     >
 
                     <label for="consolidated" class="form-check-label">
@@ -416,7 +423,7 @@
         <div class="shipment-actions d-flex flex-wrap justify-content-end gap-2">
 
             <a
-                href="{{ route('shipment-management.index') }}"
+                href="{{ $editingShipment ? route('shipment-management.create') : route('shipment-management.index') }}"
                 class="btn cancel-button"
             >
                 Cancel
@@ -428,7 +435,7 @@
 
             <button type="submit" class="btn create-shipment-button">
                 <i class="bi bi-check2-circle me-2" aria-hidden="true"></i>
-                Create Shipment
+                {{ $editingShipment ? 'Update Shipment' : 'Create Shipment' }}
             </button>
 
         </div>
@@ -461,8 +468,9 @@
                     <th scope="col">Country</th>
                     <th scope="col">Buyer</th>
                     <th scope="col">Type</th>
-                    <th scope="col">Factory Count</th>
+                    <th scope="col">Factories / POs</th>
                     <th scope="col">Created On</th>
+                    <th scope="col">Actions</th>
                 </tr>
             </thead>
 
@@ -482,23 +490,47 @@
 
                         <td>{{ ucfirst($shipment->shipment_type) }}</td>
 
-                         <td>
+                        <td>
                             @forelse ($shipment->factory_ids ?? [] as $factoryId)
-        <div>
-            {{ $factoryNames[$factoryId] ?? 'Factory unavailable' }}
-        </div>
-    @empty
-        No factories
-    @endforelse
-</td>
+                                <details class="mb-2">
+                                    <summary style="cursor: pointer;">
+                                        {{ $factoryNames[$factoryId] ?? 'Factory unavailable' }}
+                                    </summary>
+                                    <div class="small text-muted mt-2">Purchase orders</div>
+                                    <ul class="small mt-1 mb-0 ps-3">
+                                        @forelse ($factoryPurchaseOrders[$shipment->id][$factoryId] ?? [] as $poNumber)
+                                            <li>{{ $poNumber }}</li>
+                                        @empty
+                                            <li class="text-muted">No purchase orders assigned.</li>
+                                        @endforelse
+                                    </ul>
+                                </details>
+                            @empty
+                                No factories
+                            @endforelse
+                        </td>
 
                         <td>
                            {{ $shipment->created_at?->timezone('Asia/Colombo')->format('d M Y, h:i A') }}
                         </td>
+                        <td>
+                            <div class="d-flex gap-2">
+                                <a href="{{ route('shipment-management.edit', $shipment->id) }}"
+                                   class="btn btn-sm btn-outline-primary"
+                                   aria-label="Edit shipment {{ $shipment->shipment_id }}">Edit</a>
+                                <form method="POST" action="{{ route('shipment-management.destroy', $shipment->id) }}"
+                                      onsubmit="return confirm('Delete this shipment? This cannot be undone.');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"
+                                            aria-label="Delete shipment {{ $shipment->shipment_id }}">Delete</button>
+                                </form>
+                            </div>
+                        </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-4">
+                        <td colspan="7" class="text-center text-muted py-4">
                             @if($shipmentSearch !== '')
                                 No shipments match your search.
                             @else
@@ -761,11 +793,18 @@ document.addEventListener('DOMContentLoaded', function () {
     const shipmentId = document.getElementById('shipment-id');
     const shipmentIdHelp = document.getElementById('shipment-id-help');
     const nextShipmentNumbers = @json($nextShipmentNumbers);
+    const savedShipmentId = @json($editingShipment->shipment_id ?? '');
+    const savedCountry = @json($editingShipment->country_of_origin ?? '');
     let manualShipmentId = @json($manualShipmentId);
 
     function updateGeneratedShipmentId() {
         if (autoIdRadio.checked) {
             const country = countrySelect.value;
+            // Keep the existing automatic ID when opening or resetting Edit.
+            if (savedShipmentId && country === savedCountry) {
+                shipmentId.value = savedShipmentId;
+                return;
+            }
             const number = nextShipmentNumbers[country] ?? 1;
             shipmentId.value = country ? country + '-' + String(number).padStart(6, '0') : '';
         }
@@ -793,9 +832,9 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     shipmentForm.onreset = function () {
         setTimeout(function () {
-            manualShipmentId = '';
+            manualShipmentId = @json($manualShipmentId);
             changeShipmentIdMode();
-            loadPurchaseOrders();
+            loadPurchaseOrders(@json($oldPurchaseOrderIds), @json($oldFactoryIds));
         }, 0);
     };
 

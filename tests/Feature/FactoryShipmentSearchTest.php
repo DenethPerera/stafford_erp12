@@ -68,6 +68,8 @@ class FactoryShipmentSearchTest extends TestCase
             'shipment_search' => '  AF-  ', 'factory_id' => 20,
         ]))->assertOk();
         $response->assertSee('AF-000015')->assertDontSee('SHIP-TEST-001')->assertDontSee('AF-000016');
+        $assignmentId = $response->viewData('shipmentRows')->first()->assignment_id;
+        $response->assertSee(route('create-shipment.index', ['assignment_id' => $assignmentId]), false);
         $this->assertSame('AF-', $response->viewData('shipmentSearch'));
         $this->assertSame(1, $response->viewData('shipmentRows')->total());
 

@@ -60,9 +60,52 @@ class ShipmentPurchaseOrdersTest extends TestCase
             $table->boolean('isoffline')->default(false);
         });
         Schema::connection('erav')->create('prodorder_list', function (Blueprint $table) {
+            $table->increments('prodorder_id');
+            $table->string('prodorder_ref')->nullable();
             $table->integer('porder_pdf_list_id');
             $table->integer('mbranchlist_id');
             $table->boolean('isoffline')->default(false);
+        });
+        Schema::connection('erav')->create('prodorder_info', function (Blueprint $table) {
+            $table->integer('pack_no')->primary();
+            $table->integer('prodorder_id');
+            $table->integer('porder_pdf_info_id');
+            $table->integer('qrycancel')->default(0);
+        });
+        Schema::connection('erav')->create('porder_pdf_info', function (Blueprint $table) {
+            $table->id();
+            $table->integer('porder_pdf_list_id');
+            $table->string('item_styleno');
+            $table->string('item_colorcode');
+            $table->integer('qrycancel')->default(0);
+        });
+        Schema::connection('erav')->create('prodstyle_list', function (Blueprint $table) {
+            $table->id();
+            $table->string('styleid');
+            $table->integer('isoffline')->default(0);
+        });
+        Schema::connection('erav')->create('tbl_carton_dimension', function (Blueprint $table) {
+            $table->integer('idtbl_carton_dimension')->primary();
+            $table->integer('prodstyle_list_id');
+            $table->string('styleid');
+            $table->string('tbl_style_size_desc');
+            $table->integer('status')->default(1);
+        });
+        Schema::connection('erav')->create('porderctndeliaddrlist', function (Blueprint $table) {
+            $table->id();
+            $table->integer('porder_pdf_list_id');
+            $table->string('item_styleno');
+            $table->string('item_colorcode');
+            $table->string('item_colordesc');
+            $table->integer('salesotheraddr_custdest_id');
+            $table->integer('qrycancel')->default(0);
+        });
+        Schema::connection('erav')->create('salesotheraddrlist', function (Blueprint $table) {
+            $table->integer('custdest_id')->primary();
+            $table->integer('customer_id');
+            $table->string('custdest_name');
+            $table->string('custdest_addr');
+            $table->integer('qrycancel')->default(0);
         });
 
         DB::connection('erav')->table('salescustomerlist')->insert(['customer_id' => 5, 'customer_name' => 'Test Buyer']);
@@ -294,9 +337,73 @@ class ShipmentPurchaseOrdersTest extends TestCase
             $this->get(route('create-shipment.index', ['factory_id' => 999]))
                 ->assertOk()
                 ->assertSee('Order Delivery')
+                ->assertViewHas('customerName', '')
+                ->assertViewHas('productionOrders', function ($orders) {
+                    return $orders->isEmpty();
+                })
+                ->assertViewHas('shipmentNumber', '')
                 ->assertSee('value="Factory ' . $factoryId . '"', false)
                 ->assertSee($poNumbers[0])
                 ->assertDontSee($poNumbers[1]);
+        }
+    }
+
+    public function test_create_shipment_loads_customer_order_and_shipment_from_the_selected_assignment(): void
+    {
+        $shipment = $this->createSearchShipment('AF-000015');
+        $assignmentId = DB::table('shipment_order_factories')->insertGetId([
+            'shipment_id' => $shipment->id, 'purchase_order_id' => 763, 'factory_id' => 3,
+        ]);
+        DB::connection('erav')->table('prodorder_list')
+            ->where('porder_pdf_list_id', 763)->where('mbranchlist_id', 3)
+            ->update(['prodorder_ref' => 'VPO-3003259']);
+        DB::connection('erav')->table('prodorder_list')->insert([
+            ['porder_pdf_list_id' => 763, 'mbranchlist_id' => 3, 'prodorder_ref' => 'VPO-3003259', 'isoffline' => 0],
+            ['porder_pdf_list_id' => 763, 'mbranchlist_id' => 3, 'prodorder_ref' => 'VPO-3003260', 'isoffline' => 0],
+            ['porder_pdf_list_id' => 763, 'mbranchlist_id' => 3, 'prodorder_ref' => 'OFFLINE-ORDER', 'isoffline' => 1],
+            ['porder_pdf_list_id' => 763, 'mbranchlist_id' => 29, 'prodorder_ref' => 'OTHER-FACTORY', 'isoffline' => 0],
+            ['porder_pdf_list_id' => 1394, 'mbranchlist_id' => 3, 'prodorder_ref' => 'OTHER-PO', 'isoffline' => 0],
+        ]);
+
+        $user = new User(['name' => 'Factory User', 'mbranchlist_id' => 3]);
+        $user->id = 1;
+        $user->setRelation('roles', collect([new Role(['name' => 'factory', 'guard_name' => 'web'])]));
+        $this->withMiddleware()->actingAs($user);
+
+        $this->get(route('create-shipment.index', ['assignment_id' => $assignmentId]))
+            ->assertOk()
+            ->assertViewHas('selectedPurchaseOrderId', 763)
+            ->assertSee('value="Test Buyer"', false)
+            ->assertSee('value="AF-000015"', false)
+            ->assertSee('VPO-3003259')
+            ->assertSee('VPO-3003260')
+            ->assertViewHas('selectedProductionOrderId', null)
+            ->assertDontSee('OFFLINE-ORDER')
+            ->assertDontSee('OTHER-FACTORY')
+            ->assertDontSee('OTHER-PO');
+    }
+
+    public function test_create_shipment_rejects_missing_or_other_factory_assignments(): void
+    {
+        $shipment = $this->createSearchShipment('AF-000015');
+        $otherAssignmentId = DB::table('shipment_order_factories')->insertGetId([
+            'shipment_id' => $shipment->id, 'purchase_order_id' => 763, 'factory_id' => 29,
+        ]);
+        $user = new User(['name' => 'Factory User', 'mbranchlist_id' => 3]);
+        $user->id = 1;
+        $user->setRelation('roles', collect([new Role(['name' => 'factory', 'guard_name' => 'web'])]));
+        $this->withMiddleware()->actingAs($user);
+
+        foreach ([$otherAssignmentId, 99999] as $assignmentId) {
+            $this->get(route('create-shipment.index', ['assignment_id' => $assignmentId, 'factory_id' => 29]))
+                ->assertNotFound();
+        }
+
+        foreach ([['1'], 'invalid', 0] as $assignmentId) {
+            $this->from(route('create-shipment.index'))
+                ->get(route('create-shipment.index', ['assignment_id' => $assignmentId]))
+                ->assertRedirect(route('create-shipment.index'))
+                ->assertSessionHasErrors('assignment_id');
         }
     }
 
@@ -308,6 +415,180 @@ class ShipmentPurchaseOrdersTest extends TestCase
         $this->withMiddleware()->actingAs($user);
 
         $this->get(route('create-shipment.index'))->assertForbidden();
+    }
+
+    public function test_created_shipments_have_edit_and_delete_actions_and_edit_loads_saved_values(): void
+    {
+        $this->prepareShipmentActions();
+        $shipment = $this->createSearchShipment('AF-000001');
+        $shipment->update([
+            'purchase_order_id' => [763, 1394],
+            'shipment_type' => 'consolidated',
+            'factory_ids' => [3, 29],
+        ]);
+
+        $this->get(route('shipment-management.create'))->assertOk()
+            ->assertSee(route('shipment-management.edit', $shipment->id), false)
+            ->assertSee(route('shipment-management.destroy', $shipment->id), false)
+            ->assertSee('name="_method" value="DELETE"', false);
+
+        $response = $this->get(route('shipment-management.edit', $shipment->id))->assertOk()
+            ->assertSee('Update Shipment')
+            ->assertSee('name="_method" value="PUT"', false)
+            ->assertSee('value="AF-000001"', false);
+        $this->assertTrue($shipment->is($response->viewData('editingShipment')));
+        $response->assertSee('loadPurchaseOrders([763,1394], [3,29]);', false);
+    }
+
+    public function test_update_keeps_its_own_id_and_replaces_only_its_assignments(): void
+    {
+        $this->prepareShipmentActions();
+        $shipment = $this->createSearchShipment('AF-000001');
+        $other = $this->createSearchShipment('AF-000002');
+        foreach ([$shipment, $other] as $record) {
+            DB::table('shipment_order_factories')->insert([
+                'shipment_id' => $record->id, 'purchase_order_id' => 763, 'factory_id' => 3,
+            ]);
+        }
+
+        $this->put(route('shipment-management.update', $shipment->id), $this->shipmentEditData())
+            ->assertSessionHasNoErrors()->assertSessionHas('success')
+            ->assertRedirect(route('shipment-management.create'));
+
+        $shipment->refresh();
+        $this->assertSame([1394], $shipment->purchase_order_id);
+        $this->assertSame([29], $shipment->factory_ids);
+        $this->assertDatabaseCount('shipments', 2);
+        $this->assertDatabaseCount('shipment_order_factories', 2);
+        $this->assertDatabaseHas('shipment_order_factories', [
+            'shipment_id' => $shipment->id, 'purchase_order_id' => 1394, 'factory_id' => 29,
+        ]);
+        $this->assertDatabaseHas('shipment_order_factories', [
+            'shipment_id' => $other->id, 'purchase_order_id' => 763, 'factory_id' => 3,
+        ]);
+
+        // An unused shipment can also be renamed.
+        $data = $this->shipmentEditData();
+        $data['shipment_id'] = 'CUSTOM-UPDATED';
+        $this->put(route('shipment-management.update', $shipment->id), $data)->assertSessionHasNoErrors();
+        $this->assertSame('CUSTOM-UPDATED', $shipment->fresh()->shipment_id);
+    }
+
+    public function test_invalid_edits_keep_the_original_shipment_and_assignments(): void
+    {
+        $this->prepareShipmentActions();
+        $shipment = $this->createSearchShipment('AF-000001');
+        $this->createSearchShipment('AF-000002');
+        DB::table('shipment_order_factories')->insert([
+            'shipment_id' => $shipment->id, 'purchase_order_id' => 763, 'factory_id' => 3,
+        ]);
+        $before = $shipment->fresh()->getAttributes();
+
+        $data = $this->shipmentEditData();
+        $data['shipment_id'] = 'AF-000002';
+        $this->from(route('shipment-management.edit', $shipment->id))
+            ->put(route('shipment-management.update', $shipment->id), $data)
+            ->assertSessionHasErrors('shipment_id');
+
+        $data = $this->shipmentEditData();
+        $data['purchase_order_ids'] = [763]; // PO-763 does not belong to Factory 29.
+        $this->put(route('shipment-management.update', $shipment->id), $data)
+            ->assertSessionHasErrors('purchase_order_ids');
+
+        $this->assertSame($before, $shipment->fresh()->getAttributes());
+        $this->assertDatabaseHas('shipment_order_factories', [
+            'shipment_id' => $shipment->id, 'purchase_order_id' => 763, 'factory_id' => 3,
+        ]);
+    }
+
+    public function test_delete_removes_only_the_selected_shipment_and_its_assignments(): void
+    {
+        $this->prepareShipmentActions();
+        $shipment = $this->createSearchShipment('AF-000001');
+        $other = $this->createSearchShipment('AF-000002');
+        foreach ([$shipment, $other] as $record) {
+            DB::table('shipment_order_factories')->insert([
+                'shipment_id' => $record->id, 'purchase_order_id' => 763, 'factory_id' => 3,
+            ]);
+        }
+
+        $this->delete(route('shipment-management.destroy', $shipment->id))
+            ->assertRedirect(route('shipment-management.create'))->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('shipments', ['id' => $shipment->id]);
+        $this->assertDatabaseMissing('shipment_order_factories', ['shipment_id' => $shipment->id]);
+        $this->assertDatabaseHas('shipments', ['id' => $other->id]);
+        $this->assertDatabaseHas('shipment_order_factories', ['shipment_id' => $other->id]);
+    }
+
+    public static function linkedShipmentRecords(): array
+    {
+        return [
+            'delivery' => ['erav', 'prodshipment_list', 'shipment_refno'],
+            'factory document' => ['sqlite', 'shipment_documents', 'shipment_id'],
+            'forwarder document' => ['sqlite', 'forwarder_documents', 'shipment_id'],
+        ];
+    }
+
+    #[DataProvider('linkedShipmentRecords')]
+    public function test_linked_records_prevent_edit_and_delete(string $connection, string $table, string $column): void
+    {
+        $this->prepareShipmentActions();
+        $shipment = $this->createSearchShipment('AF-000001');
+        DB::connection($connection)->table($table)->insert([$column => $shipment->shipment_id]);
+
+        $this->get(route('shipment-management.edit', $shipment->id))
+            ->assertRedirect(route('shipment-management.create'))->assertSessionHas('error');
+        $this->put(route('shipment-management.update', $shipment->id), $this->shipmentEditData())
+            ->assertRedirect(route('shipment-management.create'))->assertSessionHas('error');
+        $this->delete(route('shipment-management.destroy', $shipment->id))
+            ->assertRedirect(route('shipment-management.create'))->assertSessionHas('error');
+
+        $this->assertSame([3], $shipment->fresh()->factory_ids);
+        $this->assertSame(1, DB::connection($connection)->table($table)->count());
+    }
+
+    public function test_shipment_actions_require_an_admin_and_return_404_for_unknown_shipments(): void
+    {
+        $this->prepareShipmentActions();
+        $this->get(route('shipment-management.edit', 99999))->assertNotFound();
+        $this->put(route('shipment-management.update', 99999), [])->assertNotFound();
+        $this->delete(route('shipment-management.destroy', 99999))->assertNotFound();
+
+        $shipment = $this->createSearchShipment('AF-000001');
+        $user = new User(['name' => 'Factory User', 'mbranchlist_id' => 3]);
+        $user->id = 2;
+        $user->setRelation('roles', collect([new Role(['name' => 'factory', 'guard_name' => 'web'])]));
+        $this->actingAs($user);
+        $this->get(route('shipment-management.edit', $shipment->id))->assertForbidden();
+        $this->put(route('shipment-management.update', $shipment->id), $this->shipmentEditData())->assertForbidden();
+        $this->delete(route('shipment-management.destroy', $shipment->id))->assertForbidden();
+        $this->assertDatabaseHas('shipments', ['id' => $shipment->id]);
+    }
+
+    private function shipmentEditData(): array
+    {
+        return [
+            'country_of_origin' => 'AF', 'buyer_id' => 5,
+            'shipment_id_mode' => 'manual', 'shipment_id' => 'AF-000001',
+            'purchase_order_ids' => [1394], 'shipment_type' => 'individual', 'factory_id' => 29,
+        ];
+    }
+
+    private function prepareShipmentActions(): void
+    {
+        $this->purchaseOrderMigration()->up();
+        Schema::connection('erav')->create('prodshipment_list', function (Blueprint $table) {
+            $table->id();
+            $table->string('shipment_refno');
+        });
+        foreach (['shipment_documents', 'forwarder_documents'] as $name) {
+            Schema::create($name, function (Blueprint $table) {
+                $table->id();
+                $table->string('shipment_id')->nullable();
+            });
+        }
+        $this->signInAdmin();
     }
 
     private function signInAdmin(): void

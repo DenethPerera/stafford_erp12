@@ -496,6 +496,9 @@
                             <a href="{{ route('master-data.seasons.index') }}" class="text-decoration-none fw-bold submenu-item {{ request()->routeIs('master-data.seasons.*') ? 'active' : 'text-muted' }}" style="font-size: 13px;">
                                 @if(request()->routeIs('master-data.seasons.*')) <i class="bi bi-circle-fill me-2" style="font-size: 5px;"></i> @endif Season
                             </a>
+                            <a href="{{ route('master-data.countries.index') }}" class="text-decoration-none fw-bold submenu-item {{ request()->routeIs('master-data.countries.*') ? 'active' : 'text-muted' }}" style="font-size: 13px;">
+                                @if(request()->routeIs('master-data.countries.*')) <i class="bi bi-circle-fill me-2" style="font-size: 5px;"></i> @endif Country
+                            </a>
                             {{-- Future items will go here:
                             <a href="{{ route('master-data.programs.index') }}" class="text-decoration-none fw-bold submenu-item {{ request()->routeIs('master-data.programs.*') ? 'active' : 'text-muted' }}" style="font-size: 13px;">
                                 Program
@@ -530,6 +533,13 @@
                             <i class="bi bi-folder2-open fs-5" style="color: #00A39A;"></i>
                         </div>
                         <span class="sidebar-text flex-grow-1">Shipment Documents</span>
+                    </a>
+
+                    <a href="{{ route('import-export.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('import-export.*') ? 'active' : '' }}" title="Import/Export">
+                        <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                            <i class="bi bi-arrow-down-up fs-5" style="color: #00A39A;"></i>
+                        </div>
+                        <span class="sidebar-text flex-grow-1">Import/Export</span>
                     </a>
 
                     <a href="{{ route('shipment-details.index') }}"class="nav-item px-3 py-2 {{ request()->routeIs('shipment-details.*') ? 'active' : '' }}"title="Shipment Details">
@@ -807,6 +817,9 @@
                         <a href="{{ route('master-data.seasons.index') }}" class="text-decoration-none fw-bold submenu-item {{ request()->routeIs('master-data.seasons.*') ? 'active' : 'text-muted' }}" style="font-size: 13px;">
                             @if(request()->routeIs('master-data.seasons.*')) <i class="bi bi-circle-fill me-2" style="font-size: 5px;"></i> @endif Season
                         </a>
+                        <a href="{{ route('master-data.countries.index') }}" class="text-decoration-none fw-bold submenu-item {{ request()->routeIs('master-data.countries.*') ? 'active' : 'text-muted' }}" style="font-size: 13px;">
+                            @if(request()->routeIs('master-data.countries.*')) <i class="bi bi-circle-fill me-2" style="font-size: 5px;"></i> @endif Country
+                        </a>
                     </div>
                 </div>
                 @endrole
@@ -830,6 +843,13 @@
                         <i class="bi bi-folder2-open fs-5" style="color: #00A39A;"></i>
                     </div>
                     <span>Shipment Documents</span>
+                </a>
+
+                <a href="{{ route('import-export.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('import-export.*') ? 'active' : '' }}" title="Import/Export">
+                    <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
+                        <i class="bi bi-arrow-down-up fs-5" style="color: #00A39A;"></i>
+                    </div>
+                    <span>Import/Export</span>
                 </a>
 
                 <a href="{{ route('shipment-details.index') }}"class="nav-item px-3 py-2 {{ request()->routeIs('shipment-details.*') ? 'active' : '' }}"title="Shipment Details">

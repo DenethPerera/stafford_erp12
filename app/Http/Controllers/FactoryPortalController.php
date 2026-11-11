@@ -4,8 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Erav\EravBranch;
 use App\Models\Erav\EravProdOrder;
+use App\Models\Erav\EravProdOrderInfo;
+use App\Models\Erav\EravProdShipment;
+use App\Models\Erav\EravProdShipmentItem;
+use App\Models\Erav\EravProductStyle;
+use App\Models\Erav\EravPurchaseOrderItem;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\Shipment;
+use App\Models\ShipmentOrderFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -487,8 +494,54 @@ class FactoryPortalController extends Controller
 
     public function createShipment(Request $request)
     {
+        return $this->shipmentForm($request);
+    }
+
+    // Create and Edit share the same form and dropdowns.
+    private function shipmentForm(Request $request, ?EravProdShipment $editingDelivery = null)
+    {
         $factoryId = $request->user()->mbranchlist_id;
         abort_unless($factoryId, 403, 'Your account is not linked to a factory.');
+
+        $validated = $request->validate([
+            'assignment_id' => 'nullable|integer|min:1',
+        ]);
+
+        $formData = [];
+        if ($editingDelivery) {
+            $assignment = $this->deliveryAssignment($editingDelivery);
+            if (!$assignment || $assignment->shipment_number !== $editingDelivery->shipment_refno) {
+                return redirect()->route('create-shipment.index', ['history' => 1])
+                    ->with('error', 'The original shipment assignment is no longer available.');
+            }
+            $validated['assignment_id'] = $assignment->id;
+            $item = $editingDelivery->items()->where('qrycancel', 0)->firstOrFail();
+            $formData = [
+                'production_order_id' => $editingDelivery->prodorder_list_prodorder_id,
+                'prepared_date' => $editingDelivery->shiporder_docdate,
+                'remarks' => $editingDelivery->shipment_moreinfo,
+                'container_number' => $editingDelivery->ship_container_no,
+                'vessel' => $editingDelivery->vessel_code,
+                'vendor_invoice_number' => $editingDelivery->shipment_invno,
+                'stafford_invoice_number' => $editingDelivery->stafford_invno,
+                'ship_via' => strtolower($editingDelivery->ship_method),
+                'etd' => $editingDelivery->plan_etd,
+                'pl_label' => $editingDelivery->pl_labels,
+                'approve_shipment' => $editingDelivery->qryapproved,
+                'production_item_id' => $item->prodorder_info_packno,
+                'ship_quantity' => $item->ship_qty,
+                'carton_dimension_id' => $item->idtbl_carton_dimension,
+                'pieces_per_carton' => $item->pcs_per_carton,
+                'carton_length' => $item->carton_length,
+                'carton_width' => $item->carton_width,
+                'carton_height' => $item->carton_height,
+                'total_net_weight' => $item->pack_netwgt,
+                'total_gross_weight' => $item->pack_grossweight,
+                'odd_net_weight' => $item->odditems_netwgt,
+                'odd_gross_weight' => $item->oddpack_grossweight,
+                'delivery_address_id' => $item->porderctndeliaddrlist_id,
+            ];
+        }
 
         $factoryName = EravBranch::where('id', $factoryId)->value('br_name');
 
@@ -502,6 +555,512 @@ class FactoryPortalController extends Controller
             ->orderBy('pdf_po_refno')
             ->pluck('pdf_po_refno', 'id');
 
-        return view('factory_portal.create_shipment', compact('factoryName', 'purchaseOrders'));
+        // Opening from the menu starts with empty shipment information.
+        $customerName = '';
+        $assignmentId = $validated['assignment_id'] ?? null;
+        $productionOrders = collect();
+        $orderItems = collect();
+        $cartonDimensions = collect();
+        $deliveryAddresses = collect();
+        $selectedProductionOrderId = null;
+        $shipmentNumber = '';
+        $selectedPurchaseOrderId = null;
+
+        if (!empty($validated['assignment_id'])) {
+            // Read the selected row only when it belongs to this factory.
+            $assignment = DB::table('shipment_order_factories as link')
+                ->join('shipments as shipment', 'shipment.id', '=', 'link.shipment_id')
+                ->where('link.id', $validated['assignment_id'])
+                ->where('link.factory_id', $factoryId)
+                ->select('link.purchase_order_id', 'shipment.shipment_id as shipment_number')
+                ->first();
+
+            abort_unless($assignment, 404);
+
+            $selectedPurchaseOrderId = $assignment->purchase_order_id;
+            $shipmentNumber = $assignment->shipment_number;
+
+            $purchaseOrder = DB::connection('erav')->table('porder_pdf_list')
+                ->where('id', $selectedPurchaseOrderId)
+                ->first(['customer_id']);
+
+            abort_unless($purchaseOrder, 404);
+
+            $customerName = DB::connection('erav')->table('salescustomerlist')
+                ->where('customer_id', $purchaseOrder->customer_id)
+                ->value('customer_name') ?? '';
+
+            // A PO can have more than one production order at the same factory.
+            $productionOrders = EravProdOrder::where('porder_pdf_list_id', $selectedPurchaseOrderId)
+                ->where('mbranchlist_id', $factoryId)
+                ->where('isoffline', 0)
+                ->whereNotNull('prodorder_ref')
+                ->where('prodorder_ref', '!=', '')
+                ->orderBy('prodorder_ref')
+                ->get(['prodorder_id', 'prodorder_ref']);
+
+            if ($productionOrders->count() === 1) {
+                $selectedProductionOrderId = $productionOrders->first()->prodorder_id;
+            }
+
+            // Load actual style/color/size items for the checked production orders.
+            $orderItems = EravProdOrderInfo::query()
+                ->join('porder_pdf_info as po_item', 'po_item.id', '=', 'prodorder_info.porder_pdf_info_id')
+                ->join('prodstyle_list as style', 'style.styleid', '=', 'po_item.item_styleno')
+                ->whereIn('prodorder_info.prodorder_id', $productionOrders->pluck('prodorder_id'))
+                ->where('po_item.porder_pdf_list_id', $selectedPurchaseOrderId)
+                ->where('prodorder_info.qrycancel', 0)
+                ->where('po_item.qrycancel', 0)
+                ->where('style.isoffline', 0)
+                ->select('prodorder_info.*', 'po_item.item_styleno', 'po_item.item_colorcode', 'style.id as style_id')
+                ->orderBy('prodorder_info.pack_no')
+                ->get();
+
+            // Cartons and addresses are lookups, so they do not need new models.
+            $cartonDimensions = DB::connection('erav')->table('tbl_carton_dimension')
+                ->whereIn('prodstyle_list_id', $orderItems->pluck('style_id'))
+                ->where('status', 1)
+                ->orderBy('styleid')
+                ->orderBy('tbl_style_size_desc')
+                ->get();
+
+            $deliveryAddresses = DB::connection('erav')->table('porderctndeliaddrlist as address')
+                ->join('salesotheraddrlist as destination', 'destination.custdest_id', '=', 'address.salesotheraddr_custdest_id')
+                ->where('address.porder_pdf_list_id', $selectedPurchaseOrderId)
+                ->where('address.qrycancel', 0)
+                ->where('destination.qrycancel', 0)
+                ->where('destination.customer_id', $purchaseOrder->customer_id)
+                ->select('address.id', 'address.item_styleno', 'address.item_colorcode', 'address.item_colordesc',
+                    'destination.custdest_name', 'destination.custdest_addr')
+                ->orderBy('destination.custdest_name')
+                ->get();
+        }
+
+        return view('factory_portal.create_shipment', compact(
+            'factoryName', 'purchaseOrders', 'customerName', 'productionOrders',
+            'shipmentNumber', 'selectedPurchaseOrderId', 'assignmentId', 'selectedProductionOrderId',
+            'orderItems', 'cartonDimensions', 'deliveryAddresses', 'editingDelivery', 'formData'
+        ));
+    }
+
+    // The saved Shipment Number, PO and factory determine the assignment on Edit.
+    private function deliveryAssignment(EravProdShipment $delivery)
+    {
+        return DB::table('shipment_order_factories as link')
+            ->join('shipments as shipment', 'shipment.id', '=', 'link.shipment_id')
+            ->where('shipment.shipment_id', $delivery->shipment_refno)
+            ->where('link.purchase_order_id', $delivery->porder_pdf_list_id)
+            ->where('link.factory_id', $delivery->mbranchlist_id)
+            ->select('link.id', 'shipment.shipment_id as shipment_number')
+            ->first();
+    }
+
+    private function factoryDelivery(Request $request, string $id): EravProdShipment
+    {
+        $factoryId = $request->user()->mbranchlist_id;
+        abort_unless($factoryId, 403, 'Your account is not linked to a factory.');
+
+        return EravProdShipment::where('mbranchlist_id', $factoryId)->findOrFail($id);
+    }
+
+    private function deliveryChangeError(EravProdShipment $delivery, bool $editing = false): ?string
+    {
+        if ($delivery->qryfinalized || $delivery->import_id > 0 || $delivery->imports_container_number_id > 0) {
+            return 'Finalized deliveries and deliveries linked to shipping records cannot be edited or deleted.';
+        }
+
+        if ($editing && $delivery->items()->where('qrycancel', 0)->count() !== 1) {
+            return 'This form edits deliveries with one active order item. This delivery cannot be edited here.';
+        }
+
+        return null;
+    }
+
+    public function editShipment(Request $request, string $id)
+    {
+        $delivery = $this->factoryDelivery($request, $id);
+        $error = $this->deliveryChangeError($delivery, true);
+        if ($error) {
+            return redirect()->route('create-shipment.index', ['history' => 1])->with('error', $error);
+        }
+
+        return $this->shipmentForm($request, $delivery);
+    }
+
+    public function updateShipment(Request $request, string $id)
+    {
+        $delivery = $this->factoryDelivery($request, $id);
+        $error = $this->deliveryChangeError($delivery, true);
+        if ($error) {
+            return redirect()->route('create-shipment.index', ['history' => 1])->with('error', $error);
+        }
+
+        $assignment = $this->deliveryAssignment($delivery);
+        if (!$assignment || $assignment->shipment_number !== $delivery->shipment_refno) {
+            return redirect()->route('create-shipment.index', ['history' => 1])
+                ->with('error', 'The original shipment assignment is no longer available.');
+        }
+        $request->merge(['assignment_id' => $assignment->id]);
+
+        return $this->saveShipment($request, $delivery);
+    }
+
+    public function destroyShipment(Request $request, string $id)
+    {
+        $delivery = $this->factoryDelivery($request, $id);
+        $error = $this->deliveryChangeError($delivery);
+        if ($error) {
+            return redirect()->route('create-shipment.index', ['history' => 1])->with('error', $error);
+        }
+
+        // Delete only this delivery and its items. Shared addresses stay available.
+        $error = DB::connection('erav')->transaction(function () use ($delivery) {
+            $delivery = EravProdShipment::where('mbranchlist_id', $delivery->mbranchlist_id)
+                ->lockForUpdate()->findOrFail($delivery->id);
+            $error = $this->deliveryChangeError($delivery);
+            if ($error) {
+                return $error;
+            }
+            $delivery->items()->delete();
+            $delivery->delete();
+
+            return null;
+        });
+        if ($error) {
+            return redirect()->route('create-shipment.index', ['history' => 1])->with('error', $error);
+        }
+
+        return redirect()->route('create-shipment.index', ['history' => 1])
+            ->with('success', 'Delivery deleted successfully.');
+    }
+
+    public function shipmentHistory(Request $request)
+    {
+        // Never take the factory ID from the URL or form.
+        $factoryId = $request->user()->mbranchlist_id;
+        abort_unless($factoryId, 403, 'Your account is not linked to a factory.');
+
+        $factoryName = EravBranch::where('id', $factoryId)->value('br_name');
+
+        // Include older and inactive deliveries as well as newly saved ones.
+        $historyShipments = DB::connection('erav')->table('prodshipment_list as shipment')
+            ->leftJoin('porder_pdf_list as po', 'po.id', '=', 'shipment.porder_pdf_list_id')
+            ->leftJoin('salescustomerlist as customer', 'customer.customer_id', '=', 'po.customer_id')
+            ->where('shipment.mbranchlist_id', $factoryId)
+            ->select('shipment.*', 'po.pdf_po_refno', 'customer.customer_name')
+            ->orderBy('shipment.id', 'desc')
+            ->get();
+
+        // Load all items once, then put each one under its own delivery.
+        // Left joins keep saved items visible if a lookup has been removed.
+        $historyItems = DB::connection('erav')->table('prodshipment_info as item')
+            ->leftJoin('prodstyle_list as style', 'style.id', '=', 'item.prodstyle_list_id')
+            ->leftJoin('prodorder_info as ordered', 'ordered.pack_no', '=', 'item.prodorder_info_packno')
+            ->leftJoin('porderctndeliaddrlist as address', 'address.id', '=', 'item.porderctndeliaddrlist_id')
+            ->leftJoin('salesotheraddrlist as destination', 'destination.custdest_id', '=', 'address.salesotheraddr_custdest_id')
+            ->whereIn('item.prodshipment_list_id', $historyShipments->pluck('id'))
+            ->select('item.*', 'style.styleid as style_code', 'ordered.prod_qty as order_quantity',
+                'destination.custdest_name', 'destination.custdest_addr')
+            ->orderBy('item.id')
+            ->get()
+            ->groupBy('prodshipment_list_id');
+
+        return view('factory_portal.partials.shipment_history', compact(
+            'factoryName', 'historyShipments', 'historyItems'
+        ));
+    }
+
+    public function storeShipment(Request $request)
+    {
+        return $this->saveShipment($request);
+    }
+
+    // Keep the same validation and packing calculations for Create and Update.
+    private function saveShipment(Request $request, ?EravProdShipment $editingDelivery = null)
+    {
+        // Always use the logged-in user's factory.
+        $factoryId = $request->user()->mbranchlist_id;
+        abort_unless($factoryId, 403, 'Your account is not linked to a factory.');
+
+        // Optional odd-carton weights start at zero, including for validation.
+        $request->merge([
+            'odd_net_weight' => $request->input('odd_net_weight') ?? 0,
+            'odd_gross_weight' => $request->input('odd_gross_weight') ?? 0,
+            'address_mode' => $request->input('address_mode', 'existing'),
+        ]);
+
+        // Limits match the columns in prodshipment_list.
+        $data = $request->validate([
+            'assignment_id' => 'required|integer|min:1',
+            'production_order_id' => 'required|integer|min:1',
+            'production_item_id' => 'required|integer|min:1',
+            'carton_dimension_id' => 'required|integer|min:1',
+            'address_mode' => 'required|in:existing,manual',
+            'delivery_address_id' => 'exclude_if:address_mode,manual|required|integer|min:1',
+            'manual_address' => 'exclude_unless:address_mode,manual|required|string|max:200',
+            'manual_address_name' => 'exclude_unless:address_mode,manual|nullable|string|max:50',
+            'ship_quantity' => 'required|integer|min:1|max:2147483647',
+            'pieces_per_carton' => 'required|integer|min:1|max:2147483647',
+            'total_net_weight' => 'required|numeric|min:0',
+            'total_gross_weight' => 'required|numeric|min:0|gte:total_net_weight',
+            'odd_net_weight' => 'required|numeric|min:0|lte:total_net_weight',
+            'odd_gross_weight' => 'required|numeric|min:0|gte:odd_net_weight|lte:total_gross_weight',
+            'carton_length' => 'required|numeric|gt:0',
+            'carton_width' => 'required|numeric|gt:0',
+            'carton_height' => 'required|numeric|gt:0',
+            'prepared_date' => 'required|date_format:Y-m-d',
+            'remarks' => 'nullable|string|max:100',
+            'container_number' => 'nullable|string|max:50',
+            'vessel' => 'nullable|string|max:25',
+            'vendor_invoice_number' => 'required|string|max:40',
+            'stafford_invoice_number' => 'nullable|string|max:40',
+            'ship_via' => 'required|in:courier,sea,air,road',
+            'etd' => 'nullable|date_format:Y-m-d',
+            'pl_label' => 'nullable|string|max:30',
+            'approve_shipment' => 'nullable|boolean',
+        ]);
+
+        $assignment = ShipmentOrderFactory::where('id', $data['assignment_id'])
+            ->where('factory_id', $factoryId)
+            ->firstOrFail();
+
+        $shipment = Shipment::findOrFail($assignment->shipment_id);
+
+        // The order must belong to both the selected PO and this factory.
+        $productionOrder = EravProdOrder::where('prodorder_id', $data['production_order_id'])
+            ->where('porder_pdf_list_id', $assignment->purchase_order_id)
+            ->where('mbranchlist_id', $factoryId)
+            ->where('isoffline', 0)
+            ->whereNotNull('prodorder_ref')
+            ->where('prodorder_ref', '!=', '')
+            ->firstOrFail();
+
+        // The current database column allows 15 characters.
+        if (mb_strlen($shipment->shipment_id) > 15) {
+            return back()->withErrors([
+                'shipment_number' => 'This shipment number exceeds the current 15-character database limit.',
+            ])->withInput();
+        }
+
+        $productionItem = EravProdOrderInfo::where('pack_no', $data['production_item_id'])
+            ->where('prodorder_id', $productionOrder->prodorder_id)
+            ->where('qrycancel', 0)
+            ->firstOrFail();
+
+        $purchaseOrderItem = EravPurchaseOrderItem::where('id', $productionItem->porder_pdf_info_id)
+            ->where('porder_pdf_list_id', $assignment->purchase_order_id)
+            ->where('qrycancel', 0)
+            ->firstOrFail();
+
+        $style = EravProductStyle::where('styleid', $purchaseOrderItem->item_styleno)
+            ->where('isoffline', 0)
+            ->firstOrFail();
+
+        $carton = DB::connection('erav')->table('tbl_carton_dimension')
+            ->where('idtbl_carton_dimension', $data['carton_dimension_id'])
+            ->where('prodstyle_list_id', $style->id)
+            ->where('tbl_style_size_desc', $productionItem->tbl_style_size_desc)
+            ->where('status', 1)
+            ->first();
+        abort_unless($carton, 404);
+
+        $purchaseOrder = $purchaseOrderItem->purchaseOrder;
+        abort_unless($purchaseOrder && !$purchaseOrder->isoffline, 404);
+
+        $deliveryAddressId = null;
+        if ($data['address_mode'] === 'existing') {
+            $deliveryAddress = DB::connection('erav')->table('porderctndeliaddrlist as address')
+                ->join('salesotheraddrlist as destination', 'destination.custdest_id', '=', 'address.salesotheraddr_custdest_id')
+                ->where('address.id', $data['delivery_address_id'])
+                ->where('address.porder_pdf_list_id', $assignment->purchase_order_id)
+                ->where('address.item_styleno', $purchaseOrderItem->item_styleno)
+                ->where('address.item_colorcode', $purchaseOrderItem->item_colorcode)
+                ->where('address.qrycancel', 0)
+                ->where('destination.qrycancel', 0)
+                ->where('destination.customer_id', $purchaseOrder->customer_id)
+                ->select('address.id')
+                ->first();
+            abort_unless($deliveryAddress, 404);
+            $deliveryAddressId = $deliveryAddress->id;
+        }
+
+        $fullCartons = intdiv($data['ship_quantity'], $data['pieces_per_carton']);
+        $oddCartons = $data['ship_quantity'] % $data['pieces_per_carton'] > 0 ? 1 : 0;
+        $cbmPerCarton = round($data['carton_length'] * $data['carton_width'] * $data['carton_height'] / 1000000, 6);
+
+        if ($oddCartons === 0 && (($data['odd_net_weight'] ?? 0) > 0 || ($data['odd_gross_weight'] ?? 0) > 0)) {
+            return back()->withErrors([
+                'odd_net_weight' => 'Odd-carton weights must be zero when there is no odd carton.',
+            ])->withInput();
+        }
+
+        $userId = (string) $request->user()->id;
+        $preparedAt = now('Asia/Colombo')->format('Y-m-d H:i:s');
+        $approved = $request->boolean('approve_shipment');
+
+        DB::connection('erav')->beginTransaction();
+
+        try {
+            if ($editingDelivery) {
+                // Recheck the current status while saving, in case another user changed it.
+                $editingDelivery = EravProdShipment::where('mbranchlist_id', $factoryId)
+                    ->lockForUpdate()->findOrFail($editingDelivery->id);
+                $error = $this->deliveryChangeError($editingDelivery, true);
+                if ($error) {
+                    DB::connection('erav')->rollBack();
+
+                    return back()->withErrors(['shipment' => $error])->withInput();
+                }
+            }
+            // Serialize saves of the same item before checking its remaining quantity.
+            $productionItem = EravProdOrderInfo::where('pack_no', $productionItem->pack_no)
+                ->where('qrycancel', 0)->lockForUpdate()->firstOrFail();
+
+            $shippedItems = EravProdShipmentItem::query()
+                ->join('prodshipment_list as header', 'header.id', '=', 'prodshipment_info.prodshipment_list_id')
+                ->where('prodshipment_info.prodorder_info_packno', $productionItem->pack_no)
+                ->where('prodshipment_info.qrycancel', 0)
+                ->where('header.isoffline', 0);
+            if ($editingDelivery) {
+                // The delivery being edited must not consume its own quantity allowance.
+                $shippedItems->where('header.id', '!=', $editingDelivery->id);
+            }
+            $alreadyShipped = $shippedItems->sum('prodshipment_info.ship_qty');
+
+            $remainingQuantity = max(0, $productionItem->prod_qty - $alreadyShipped);
+            if ($data['ship_quantity'] > $remainingQuantity) {
+                DB::connection('erav')->rollBack();
+
+                return back()->withErrors([
+                    'ship_quantity' => 'Only ' . $remainingQuantity . ' pieces remain for this order item.',
+                ])->withInput();
+            }
+
+            $delivery = $editingDelivery ?? new EravProdShipment();
+            $delivery->prodorder_list_prodorder_id = $productionOrder->prodorder_id;
+            $delivery->porder_pdf_list_id = $assignment->purchase_order_id;
+            $delivery->mbranchlist_id = $factoryId;
+            $delivery->prodorder_ref = $productionOrder->prodorder_ref;
+            $delivery->shiporder_docdate = $data['prepared_date'];
+            $delivery->shipment_moreinfo = $data['remarks'] ?? '';
+            $delivery->ship_container_no = $data['container_number'] ?? null;
+            $delivery->vessel_code = $data['vessel'] ?? '';
+            $delivery->shipment_invno = $data['vendor_invoice_number'];
+            $delivery->stafford_invno = $data['stafford_invoice_number'] ?? null;
+            $delivery->ship_method = strtoupper($data['ship_via']);
+            $delivery->plan_etd = $data['etd'] ?? null;
+            $delivery->shipment_refno = $shipment->shipment_id;
+            $delivery->pl_labels = $data['pl_label'] ?? null;
+            $delivery->ship_tot_cartons = $fullCartons + $oddCartons;
+            // This form saves one item; totals include the odd carton.
+            $delivery->ship_net_weight = $data['total_net_weight'];
+            $delivery->ship_gross_weight = $data['total_gross_weight'];
+            if ($editingDelivery) {
+                $delivery->updated_by = $userId;
+                $delivery->updated_at = $preparedAt;
+            } else {
+                $delivery->shipment_htsno = '';
+                $delivery->prepare_by = $userId;
+                $delivery->prep_time = $preparedAt;
+                $delivery->isoffline = 0;
+            }
+            // Keep the original approval details unless the approval choice changes.
+            if (!$editingDelivery || (bool) $delivery->qryapproved !== $approved) {
+                $delivery->approve_by = $approved ? $userId : null;
+                $delivery->approve_on = $approved ? $preparedAt : null;
+            }
+            $delivery->qryapproved = $approved ? 1 : 0;
+            $delivery->save();
+
+            if ($data['address_mode'] === 'manual') {
+                // Create a new customer destination; do not edit a shared address.
+                $destinationId = DB::connection('erav')->table('salesotheraddrlist')->insertGetId([
+                    'customer_id' => $purchaseOrder->customer_id,
+                    'custdest_name' => $data['manual_address_name'] ?? 'Shipment ' . $shipment->shipment_id,
+                    'custdest_addr' => $data['manual_address'],
+                    'custdest_regno' => '',
+                    'qrycancel' => 0,
+                    'created_by' => $userId,
+                    'created_at' => $preparedAt,
+                ], 'custdest_id');
+
+                // Link the destination to this PO, style, color and delivery.
+                $deliveryAddressId = DB::connection('erav')->table('porderctndeliaddrlist')->insertGetId([
+                    'porder_pdf_list_id' => $assignment->purchase_order_id,
+                    'item_styleno' => $purchaseOrderItem->item_styleno,
+                    'prodstyle_list_id' => $style->id,
+                    'item_colorcode' => $purchaseOrderItem->item_colorcode,
+                    'item_colordesc' => $productionItem->tbl_style_color_desc,
+                    'salesotheraddr_custdest_id' => $destinationId,
+                    'prodcarton_from' => 1,
+                    'prodcarton_to' => $fullCartons + $oddCartons,
+                    'pack_by_ratio' => 0,
+                    'ctnpo_num' => $purchaseOrder->pdf_po_refno,
+                    'ctndoc_id' => 'SHIP-' . $delivery->id,
+                    'delivery_schdate' => null,
+                    'qrycancel' => 0,
+                    'created_by' => $userId,
+                    'created_at' => $preparedAt,
+                ]);
+            }
+
+            $item = $editingDelivery
+                ? $delivery->items()->where('qrycancel', 0)->firstOrFail()
+                : new EravProdShipmentItem();
+            $item->prodshipment_list_id = $delivery->id;
+            $item->prodorder_info_packno = $productionItem->pack_no;
+            $item->porder_pdf_info_id = $purchaseOrderItem->id;
+            $item->prodstyle_list_id = $style->id;
+            $item->color_code = $productionItem->color_code;
+            $item->tbl_style_color_code = $productionItem->tbl_style_color_code;
+            $item->tbl_style_color_desc = $productionItem->tbl_style_color_desc;
+            $item->size_type = $productionItem->size_type;
+            $item->tbl_style_size_desc = $productionItem->tbl_style_size_desc;
+            $item->ship_qty = $data['ship_quantity'];
+            $item->full_carton_nos = $fullCartons;
+            $item->odd_carton_nos = $oddCartons;
+            $item->pcs_per_carton = $data['pieces_per_carton'];
+            $item->pack_netwgt = $data['total_net_weight'];
+            $item->pack_grossweight = $data['total_gross_weight'];
+            $item->odditems_netwgt = $data['odd_net_weight'] ?? 0;
+            $item->oddpack_grossweight = $data['odd_gross_weight'] ?? 0;
+            $item->idtbl_carton_dimension = $carton->idtbl_carton_dimension;
+            $item->carton_length = $data['carton_length'];
+            $item->carton_width = $data['carton_width'];
+            $item->carton_height = $data['carton_height'];
+            $item->item_weight = $carton->item_weight;
+            $item->carton_weight = $carton->carton_weight;
+            $item->cbm_per_carton = $cbmPerCarton;
+            $item->porderctndeliaddrlist_id = $deliveryAddressId;
+            // The existing legacy item records use zero for these rate fields.
+            $item->qrycancel = 0;
+            if ($editingDelivery) {
+                $item->updated_by = $userId;
+                $item->updated_at = $preparedAt;
+            } else {
+                $item->packrate_itemsize = 0;
+                $item->baserate_itemcolor = 0;
+                $item->created_by = $userId;
+                $item->created_at = $preparedAt;
+            }
+            $item->save();
+
+            DB::connection('erav')->commit();
+        } catch (\Throwable $exception) {
+            DB::connection('erav')->rollBack();
+            report($exception);
+
+            return back()->withErrors([
+                'shipment' => 'The shipment could not be saved. Please try again.',
+            ])->withInput();
+        }
+
+        if ($editingDelivery) {
+            return redirect()->route('create-shipment.index', ['history' => 1])
+                ->with('success', 'Delivery updated successfully.');
+        }
+
+        return redirect()->route('shipment-details.index')
+            ->with('success', 'Shipment and order item saved successfully.');
     }
 }
