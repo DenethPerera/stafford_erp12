@@ -30,11 +30,26 @@ return [
 
     'disks' => [
 
+        'shipment_documents' => [
+            'driver' => 'local',
+            'root' => storage_path('shipment_documents'),
+            'visibility' => 'private',
+            'throw' => true,
+        ],
+
+    'forwarders' => [
+        'driver' => 'local',
+        'root' => storage_path('forwarder_documents'),
+        'visibility' => 'private',
+        'throw' => true,],
+
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app'),
             'throw' => false,
         ],
+
+
 
         'public' => [
             'driver' => 'local',

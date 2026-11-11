@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Auth\ForwarderLoginController;
 
 Route::get('/', function () {
     return redirect()->route('dashboard');
@@ -26,6 +27,7 @@ Route::middleware(['auth'])->group(function () {
 // custom actions
         Route::get('shipment-management/purchase-orders',[ \App\Http\Controllers\ShipmentManagementController::class,'purchaseOrdersByBuyer'])->name('shipment-management.purchase-orders');
         Route::get('shipment-management/scan', [\App\Http\Controllers\ShipmentManagementController::class, 'scan'])->name('shipment-management.scan');
+        Route::get('shipment-management/documents/{shipmentDocument}', [\App\Http\Controllers\ShipmentDocumentController::class, 'document'])->name('shipment-management.documents.show');
         Route::get('shipment-management/forwarder-login', [\App\Http\Controllers\ShipmentManagementController::class, 'forwarderLogin'])->name('shipment-management.forwarder-login');
         Route::resource('shipment-management',\App\Http\Controllers\ShipmentManagementController::class);
 
@@ -33,6 +35,21 @@ Route::middleware(['auth'])->group(function () {
     \App\Http\Controllers\ShipmentManagementController::class,
     'saveShipmentImport',
 ])->name('shipment-management.save-import');
+
+Route::resource(
+    'forwarders',
+    \App\Http\Controllers\ForwarderController::class
+)->only(['index', 'store', 'destroy']);
+
+Route::get(
+    'forwarders/{forwarder}/documents/{document}',
+    [\App\Http\Controllers\ForwarderController::class, 'document']
+)->name('forwarders.document');
+
+Route::delete(
+    'forwarder-documents/{forwarderDocument}',
+    [\App\Http\Controllers\ForwarderController::class, 'destroyDocuments']
+)->name('forwarder-documents.destroy');
 
 
 
@@ -116,6 +133,11 @@ Route::middleware(['auth'])->group(function () {
 
     // Factory Portal - PO creation and factory dashboard
     Route::middleware('role:factory')->group(function () {
+        Route::get('shipment-documents', [\App\Http\Controllers\ShipmentDocumentController::class, 'index'])->name('shipment-documents.index');
+        Route::post('shipment-documents', [\App\Http\Controllers\ShipmentDocumentController::class, 'store'])->name('shipment-documents.store');
+        Route::delete('shipment-documents/{shipmentDocument}', [\App\Http\Controllers\ShipmentDocumentController::class, 'destroy'])->name('shipment-documents.destroy');
+        Route::get('shipment-documents/{shipmentDocument}/document', [\App\Http\Controllers\ShipmentDocumentController::class, 'document'])->name('shipment-documents.document');
+
         Route::get('factory-portal', [\App\Http\Controllers\FactoryPortalController::class, 'index'])->name('factory-portal.index');
         Route::post('factory-portal/{id}/store-po', [\App\Http\Controllers\FactoryPortalController::class, 'storePurchaseOrder'])->name('factory-portal.store-po');
     });
@@ -175,5 +197,40 @@ Route::get('storage/{path}', function ($path) {
         'Content-Disposition' => 'inline; filename="' . basename($filePath) . '"',
     ]);
 })->where('path', '.*');
+
+
+
+Route::prefix('forwarder')->name('forwarder.')->group(function () {
+    Route::middleware('guest')->group(function () {
+        Route::get('/login', [ForwarderLoginController::class, 'create'])
+            ->name('login');
+
+        Route::post('/login', [ForwarderLoginController::class, 'store'])
+            ->middleware('throttle:5,1')
+            ->name('login.store');
+    });
+
+    Route::middleware(['auth', 'role:forwarder'])->group(function () {
+        Route::view('/dashboard', 'forwarders.dashboard')
+            ->name('dashboard');
+
+        Route::get('/file-upload', [\App\Http\Controllers\ForwarderController::class, 'fileUpload'])
+            ->name('file-upload');
+
+        Route::post('/file-upload', [\App\Http\Controllers\ForwarderController::class, 'storeDocuments'])
+            ->name('file-upload.store');
+
+        Route::get('/documents/{forwarder}/{document}', [\App\Http\Controllers\ForwarderController::class, 'document'])
+            ->name('documents.show');
+
+        Route::delete('/documents/{forwarderDocument}', [\App\Http\Controllers\ForwarderController::class, 'destroyDocuments'])
+            ->name('documents.destroy');
+
+        Route::post('/logout', [ForwarderLoginController::class, 'destroy'])
+            ->name('logout');
+    });
+});
+
+
 
 require __DIR__.'/auth.php';

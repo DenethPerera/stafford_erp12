@@ -3,11 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\Shipment;
+use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class ShipmentPurchaseOrdersTest extends TestCase
@@ -36,11 +38,13 @@ class ShipmentPurchaseOrdersTest extends TestCase
 
         Schema::create('tbl_country', function (Blueprint $table) {
             $table->string('country_code');
+            $table->string('country')->nullable();
         });
-        DB::table('tbl_country')->insert(['country_code' => 'AF']);
+        DB::table('tbl_country')->insert(['country_code' => 'AF', 'country' => 'Afghanistan']);
 
         Schema::connection('erav')->create('salescustomerlist', function (Blueprint $table) {
             $table->integer('customer_id')->primary();
+            $table->string('customer_name')->nullable();
             $table->boolean('isoffline')->default(false);
         });
         Schema::connection('erav')->create('porder_pdf_list', function (Blueprint $table) {
@@ -52,6 +56,7 @@ class ShipmentPurchaseOrdersTest extends TestCase
         Schema::connection('erav')->create('mbranchlist', function (Blueprint $table) {
             $table->integer('id')->primary();
             $table->string('br_name');
+            $table->string('br_code')->nullable();
             $table->boolean('isoffline')->default(false);
         });
         Schema::connection('erav')->create('prodorder_list', function (Blueprint $table) {
@@ -60,14 +65,14 @@ class ShipmentPurchaseOrdersTest extends TestCase
             $table->boolean('isoffline')->default(false);
         });
 
-        DB::connection('erav')->table('salescustomerlist')->insert(['customer_id' => 5]);
+        DB::connection('erav')->table('salescustomerlist')->insert(['customer_id' => 5, 'customer_name' => 'Test Buyer']);
         DB::connection('erav')->table('porder_pdf_list')->insert([
             ['id' => 763, 'customer_id' => 5, 'pdf_po_refno' => 'PO-763'],
             ['id' => 1394, 'customer_id' => 5, 'pdf_po_refno' => 'PO-1394'],
         ]);
         DB::connection('erav')->table('mbranchlist')->insert([
-            ['id' => 3, 'br_name' => 'Factory 3'],
-            ['id' => 29, 'br_name' => 'Factory 29'],
+            ['id' => 3, 'br_name' => 'Factory 3', 'br_code' => 'F03'],
+            ['id' => 29, 'br_name' => 'Factory 29', 'br_code' => 'F29'],
         ]);
         DB::connection('erav')->table('prodorder_list')->insert([
             ['porder_pdf_list_id' => 763, 'mbranchlist_id' => 3],
@@ -149,6 +154,99 @@ class ShipmentPurchaseOrdersTest extends TestCase
 
         $migration->up();
         $this->assertSame([763, 1394], Shipment::findOrFail($multiId)->purchase_order_id);
+    }
+
+    public function test_created_shipments_search_matches_ids_without_changing_the_next_generated_number(): void
+    {
+        $first = $this->createSearchShipment('AF-000007');
+        $second = $this->createSearchShipment('AF-000008');
+        $this->createSearchShipment('CUSTOM-RED');
+        $this->signInAdmin();
+
+        $searches = [
+            ['000007', [$first->id]],
+            ['  AF-000007  ', [$first->id]],
+            ['AF-', [$first->id, $second->id]],
+            ['0', [$first->id, $second->id]],
+        ];
+        foreach ($searches as [$term, $expectedIds]) {
+            $response = $this->get(route('shipment-management.create', ['shipment_search' => $term]));
+            $response->assertOk()->assertSee('placeholder="Search shipments..."', false);
+            $this->assertEqualsCanonicalizing($expectedIds, $response->viewData('shipments')->pluck('id')->all());
+            $this->assertSame(trim($term), $response->viewData('shipmentSearch'));
+            $this->assertSame(9, $response->viewData('nextShipmentNumbers')['AF']);
+        }
+    }
+
+    public function test_created_shipments_search_handles_no_matches_and_blank_searches(): void
+    {
+        $this->createSearchShipment('AF-000001');
+        $this->signInAdmin();
+
+        $notFound = $this->get(route('shipment-management.create', ['shipment_search' => 'NoMatch']));
+        $notFound->assertOk()->assertSee('No shipments match your search.');
+        $this->assertSame(0, $notFound->viewData('shipments')->total());
+
+        foreach ([[], ['shipment_search' => '   ']] as $parameters) {
+            $response = $this->get(route('shipment-management.create', $parameters))->assertOk();
+            $this->assertSame(1, $response->viewData('shipments')->total());
+            $this->assertSame('', $response->viewData('shipmentSearch'));
+        }
+    }
+
+    public function test_created_shipments_search_is_kept_when_changing_pages(): void
+    {
+        for ($number = 1; $number <= 12; $number++) {
+            $this->createSearchShipment(sprintf('AF-%06d', $number));
+        }
+        $this->createSearchShipment('CUSTOM-RED');
+        $this->signInAdmin();
+
+        $response = $this->get(route('shipment-management.create', [
+            'shipment_search' => 'AF-',
+            'page' => 2,
+        ]));
+        $response->assertOk()->assertDontSee('<td>CUSTOM-RED</td>', false);
+        $shipments = $response->viewData('shipments');
+        $this->assertSame(12, $shipments->total());
+        $this->assertSame(2, $shipments->currentPage());
+        $this->assertCount(2, $shipments);
+        parse_str(parse_url($shipments->previousPageUrl(), PHP_URL_QUERY), $parameters);
+        $this->assertSame('AF-', $parameters['shipment_search']);
+    }
+
+    public function test_created_shipments_search_rejects_invalid_input(): void
+    {
+        $this->signInAdmin();
+
+        foreach ([['AF-'], str_repeat('A', 256)] as $term) {
+            $this->from(route('shipment-management.create'))
+                ->get(route('shipment-management.create', ['shipment_search' => $term]))
+                ->assertRedirect(route('shipment-management.create'))
+                ->assertSessionHasErrors('shipment_search');
+        }
+    }
+
+    private function signInAdmin(): void
+    {
+        $this->withMiddleware();
+        $user = new User(['name' => 'Test Admin']);
+        $user->id = 1;
+        $user->setRelation('roles', collect([new Role(['name' => 'super_admin', 'guard_name' => 'web'])]));
+        $this->actingAs($user);
+    }
+
+    private function createSearchShipment(string $shipmentId): Shipment
+    {
+        return Shipment::create([
+            'country_of_origin' => 'AF',
+            'buyer_id' => '5',
+            'shipment_id' => $shipmentId,
+            'shipment_id_mode' => 'manual',
+            'purchase_order_id' => null,
+            'shipment_type' => 'individual',
+            'factory_ids' => [3],
+        ]);
     }
 
     private function insertLegacyShipment(string $shipmentId, ?int $purchaseOrderId): int

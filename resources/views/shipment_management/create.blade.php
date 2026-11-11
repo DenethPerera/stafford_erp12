@@ -436,7 +436,22 @@
     </form>
 
     <div class="shipment-details mt-4">
-    <h2>Created Shipments</h2>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+        <h2 class="mb-0">Created Shipments</h2>
+
+        <form method="GET" action="{{ route('shipment-management.create') }}" class="position-relative"
+              style="width: 320px; max-width: 100%;">
+            <label for="shipment_search" class="visually-hidden">Search created shipments by Shipment ID</label>
+            <input type="text" id="shipment_search" name="shipment_search"
+                   class="form-control rounded-pill bg-white shadow-sm border-0 pe-5"
+                   value="{{ $shipmentSearch }}" maxlength="255" placeholder="Search shipments...">
+            <button type="submit"
+                    class="btn position-absolute top-50 end-0 translate-middle-y border-0 bg-transparent text-muted px-3 py-0"
+                    aria-label="Search shipments">
+                <i class="bi bi-search" aria-hidden="true"></i>
+            </button>
+        </form>
+    </div>
 
     <div class="table-responsive">
         <table class="table table-hover align-middle">
@@ -484,7 +499,11 @@
                 @empty
                     <tr>
                         <td colspan="6" class="text-center text-muted py-4">
-                            No shipments created yet.
+                            @if($shipmentSearch !== '')
+                                No shipments match your search.
+                            @else
+                                No shipments created yet.
+                            @endif
                         </td>
                     </tr>
                 @endforelse

@@ -36,6 +36,7 @@ class User extends Authenticatable
         'factory_id',
         'mbranchlist_id',
         'lab_id',
+        'forwarder_id',
     ];
 
     public function isAdmin(): bool
@@ -68,6 +69,11 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Lab::class);
     }
+
+    public function forwarder()
+{
+    return $this->belongsTo(Forwarder::class);
+}
 
     public function cpscTokens()
     {
