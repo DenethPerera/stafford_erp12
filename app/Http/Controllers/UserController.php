@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 
 use App\Models\User;
 use App\Models\Lab;
+use App\Models\Forwarder;
 use App\Models\Erav\EravBranch;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\Hash;
@@ -13,9 +14,9 @@ use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
-    
+
      // Display a listing of the resource.
-    
+
     public function index()
     {
         $users = User::with(['roles', 'lab', 'branch', 'factory'])->get();
@@ -31,7 +32,11 @@ class UserController extends Controller
             ->where('br_name', '!=', '')
             ->orderBy('br_name')
             ->get(['id', 'br_name', 'br_code']);
-        return view('users.create', compact('roles', 'labs', 'branches'));
+
+
+         $forwarders = Forwarder::orderBy('company_name')
+        ->get(['id', 'company_name']);
+        return view('users.create', compact('roles', 'labs', 'branches','forwarders'));
     }
 
     // Store a newly created resource in storage.
@@ -44,6 +49,8 @@ class UserController extends Controller
             'role' => 'required|exists:roles,name',
             'lab_id' => 'nullable|exists:labs,id',
             'mbranchlist_id' => 'nullable|exists:erav.mbranchlist,id',
+            'forwarder_id' => ['required_if:role,forwarder','nullable','integer','exists:forwarders,id',
+            ],
         ]);
 
         $user = User::create([
@@ -52,6 +59,8 @@ class UserController extends Controller
             'password' => Hash::make($validated['password']),
             'lab_id' => $validated['role'] === 'lab' ? ($request->input('lab_id')) : null,
             'mbranchlist_id' => $validated['role'] === 'factory' ? ($request->input('mbranchlist_id')) : null,
+            'forwarder_id' => $validated['role'] === 'forwarder'? $validated['forwarder_id']: null,
+
         ]);
 
         $user->assignRole($validated['role']);
@@ -94,11 +103,11 @@ class UserController extends Controller
         $user->email = $validated['email'];
         $user->lab_id = $validated['role'] === 'lab' ? ($request->input('lab_id')) : null;
         $user->mbranchlist_id = $validated['role'] === 'factory' ? ($request->input('mbranchlist_id')) : null;
-        
+
         if (!empty($validated['password'])) {
             $user->password = Hash::make($validated['password']);
         }
-        
+
         $user->save();
         $user->syncRoles([$validated['role']]);
 

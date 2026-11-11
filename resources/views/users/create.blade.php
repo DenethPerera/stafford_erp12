@@ -104,6 +104,47 @@
                 @enderror
             </div>
 
+
+
+
+
+            <div
+    class="mb-4"
+    id="forwarder_section"
+    style="display: {{ old('role') == 'forwarder' ? 'block' : 'none' }};"
+>
+    <label
+        for="forwarder_id"
+        class="form-label text-secondary text-uppercase fw-bolder"
+        style="font-size: 11px; letter-spacing: 1px;"
+    >
+        Assign Forwarder
+    </label>
+
+    <select
+        name="forwarder_id"
+        id="forwarder_id"
+        class="form-select bg-light border-light fw-semibold text-dark shadow-sm px-4 py-2 {{ $errors->has('forwarder_id') ? 'is-invalid' : '' }}"
+    >
+        <option value="">Select a forwarder...</option>
+
+        @foreach($forwarders as $forwarder)
+            <option
+                value="{{ $forwarder->id }}"
+                {{ old('forwarder_id') == $forwarder->id ? 'selected' : '' }}
+            >
+                {{ $forwarder->company_name }}
+            </option>
+        @endforeach
+    </select>
+
+    @error('forwarder_id')
+        <div class="invalid-feedback fw-semibold mt-1">
+            {{ $message }}
+        </div>
+    @enderror
+</div>
+
             <div class="pt-2 d-flex justify-content-end">
                 <button type="submit" class="btn btn-primary fw-bold rounded-pill shadow-sm px-4 py-2">
                     Create User
@@ -119,10 +160,20 @@
         const labSection = document.getElementById('lab_section');
         const factorySection = document.getElementById('factory_section');
 
+        const forwarderSection = document.getElementById('forwarder_section');
+        const forwarderSelect = document.getElementById('forwarder_id');
+
+
         function toggleRoleSections() {
             const role = roleSelect.value;
+            const isForwarder = role === 'forwarder';
             labSection.style.display = (role === 'lab') ? 'block' : 'none';
             factorySection.style.display = (role === 'factory') ? 'block' : 'none';
+
+            forwarderSection.style.display =isForwarder ? 'block' : 'none';
+
+            forwarderSelect.required = isForwarder;
+            forwarderSelect.disabled = !isForwarder;
         }
 
         roleSelect.addEventListener('change', toggleRoleSections);
