@@ -11,6 +11,10 @@ class EravPurchaseOrder extends Model
     public $timestamps = false;
     protected $guarded = [];
 
+    public function customer()
+    {
+        return $this->belongsTo(EravSalesCustomer::class, 'customer_id', 'customer_id');
+    }
     public function items()
     {
         return $this->hasMany(EravPurchaseOrderItem::class, 'porder_pdf_list_id');

@@ -11,6 +11,16 @@ Route::middleware(['auth'])->group(function () {
 
 
     Route::middleware('role:super_admin')->group(function () {
+        // Sales Contracts use existing uploaded customer POs; staff access only.
+        Route::prefix('purchase-orders/sales-contracts')->name('purchase-orders.sales-contracts.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\SalesContractController::class, 'index'])->name('index');
+            Route::get('/{id}', [\App\Http\Controllers\SalesContractController::class, 'show'])->whereNumber('id')->name('show');
+            Route::put('/{id}', [\App\Http\Controllers\SalesContractController::class, 'update'])->whereNumber('id')->name('update');
+            Route::put('/{id}/prices', [\App\Http\Controllers\SalesContractController::class, 'updatePrices'])->whereNumber('id')->name('prices.update');
+            Route::put('/{id}/packing', [\App\Http\Controllers\SalesContractController::class, 'updatePacking'])->whereNumber('id')->name('packing.update');
+            Route::post('/{id}/finalize', [\App\Http\Controllers\SalesContractController::class, 'finalize'])->whereNumber('id')->name('finalize');
+            Route::get('/{id}/print', [\App\Http\Controllers\SalesContractController::class, 'printView'])->whereNumber('id')->name('print');
+        });
         Route::resource('users', \App\Http\Controllers\UserController::class);
         Route::resource('labs', \App\Http\Controllers\LabController::class);
 // custom actions
@@ -108,16 +118,31 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware('role:factory|super_admin')->group(function () {
         Route::get('factory-portal/{id}', [\App\Http\Controllers\FactoryPortalController::class, 'show'])->name('factory-portal.show');
 
+        Route::get('purchase-orders/compare', [\App\Http\Controllers\CustomerPoCompareController::class, 'index'])->name('purchase-orders.compare.index');
+        // Customer PO Upload (Direct ERP Integration)
+        // IMPORTANT: this block MUST stay ABOVE 'purchase-orders/{id}', otherwise
+        // /purchase-orders/customer-upload is matched as {id} and gives a 404.
+        Route::prefix('purchase-orders/customer-upload')->name('purchase-orders.customer-po-upload.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\CustomerPoUploadController::class, 'index'])->name('index');
+            Route::post('/preview', [\App\Http\Controllers\CustomerPoUploadController::class, 'preview'])->name('preview');
+            Route::post('/confirm', [\App\Http\Controllers\CustomerPoUploadController::class, 'confirm'])->name('confirm');
+            Route::get('/ftp-files', [\App\Http\Controllers\CustomerPoUploadController::class, 'getFtpFiles'])->name('ftp-files');
+            Route::get('/{id}', [\App\Http\Controllers\CustomerPoUploadController::class, 'show'])->whereNumber('id')->name('show');
+        });
+
         // Purchase Orders
         Route::get('purchase-orders', [\App\Http\Controllers\PurchaseOrderController::class, 'index'])->name('purchase-orders.index');
         Route::get('purchase-orders/{id}', [\App\Http\Controllers\PurchaseOrderController::class, 'show'])->name('purchase-orders.show');
     });
 });
+Route::get('/my-role-check', function () {
+    return auth()->user()->getRoleNames();
+})->middleware('auth');
 
 // Fallback route to safely stream storage files if symlink is unavailable
 Route::get('storage/{path}', function ($path) {
     $cleanPath = str_replace(['..', '\\'], ['', '/'], $path);
-    $cleanPath = ltrim($cleanPath, '/');
+    $cleanPath = ltrim($cleanPath, '/');    
 
     $candidates = [
         storage_path('app/public/' . $cleanPath),
@@ -146,4 +171,3 @@ Route::get('storage/{path}', function ($path) {
 })->where('path', '.*');
 
 require __DIR__.'/auth.php';
-

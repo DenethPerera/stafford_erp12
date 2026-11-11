@@ -442,12 +442,10 @@
 
 
 
-                    <a href="{{ route('purchase-orders.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('purchase-orders.*') ? 'active' : '' }}" title="Purchase Orders">
-                        <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
-                            <i class="bi bi-file-earmark-text-fill fs-5" style="color: #10b981;"></i>
-                        </div>
-                        <span class="sidebar-text">Purchase Orders</span>
-                    </a>
+                    @include('purchase_orders.partials.po-menu', [
+                        'collapseId' => 'poManagementCollapse',
+                        'isMobile' => false,
+                    ])
 
 
                              {{-- up in here put shipment managemnt section to main out  --}}
@@ -503,12 +501,10 @@
                         <span class="sidebar-text flex-grow-1">My Allocations</span>
                     </a>
 
-                    <a href="{{ route('purchase-orders.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('purchase-orders.*') ? 'active' : '' }}" title="Purchase Orders">
-                        <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
-                            <i class="bi bi-file-earmark-text-fill fs-5" style="color: #10b981;"></i>
-                        </div>
-                        <span class="sidebar-text flex-grow-1">Purchase Orders</span>
-                    </a>
+                    @include('purchase_orders.partials.po-menu', [
+                        'collapseId' => 'poManagementCollapseFactory',
+                        'isMobile' => false,
+                    ])
                     @endrole
 
                     @role('lab')
@@ -723,12 +719,10 @@
 
 
 
-                <a href="{{ route('purchase-orders.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('purchase-orders.*') ? 'active' : '' }}">
-                    <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
-                        <i class="bi bi-file-earmark-text-fill fs-5" style="color: #10b981;"></i>
-                    </div>
-                    <span>Purchase Orders</span>
-                </a>
+                @include('purchase_orders.partials.po-menu', [
+                    'collapseId' => 'mobilePoManagementCollapse',
+                    'isMobile' => true,
+                ])
 
 
 
@@ -779,12 +773,10 @@
                     <span>My Allocations</span>
                 </a>
 
-                <a href="{{ route('purchase-orders.index') }}" class="nav-item px-3 py-2 {{ request()->routeIs('purchase-orders.*') ? 'active' : '' }}">
-                    <div class="nav-icon-wrapper me-3" style="width: 32px; height: 32px;">
-                        <i class="bi bi-file-earmark-text-fill fs-5" style="color: #10b981;"></i>
-                    </div>
-                    <span>Purchase Orders</span>
-                </a>
+                @include('purchase_orders.partials.po-menu', [
+                    'collapseId' => 'mobilePoManagementCollapseFactory',
+                    'isMobile' => true,
+                ])
                 @endrole
 
                 @role('lab')
