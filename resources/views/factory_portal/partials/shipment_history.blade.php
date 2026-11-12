@@ -4,7 +4,7 @@
 </p>
 
 @forelse ($historyShipments as $delivery)
-    <div class="d-flex align-items-start gap-2 mb-2">
+    <div class="history-shipment d-flex align-items-start gap-2 mb-2">
     <details class="border rounded-3 flex-grow-1" style="min-width: 0;">
         <summary class="p-3 bg-light rounded-3" style="cursor: pointer; overflow-wrap: anywhere;">
             <strong>{{ $delivery->shipment_refno ?: 'Shipment number unavailable' }}</strong>
@@ -153,3 +153,9 @@
         No shipments created yet.
     </div>
 @endforelse
+
+@if ($historyShipments->isNotEmpty())
+    <p id="shipment-history-no-results" class="text-center text-muted py-4 mb-0" hidden>
+        No shipments match your search.
+    </p>
+@endif

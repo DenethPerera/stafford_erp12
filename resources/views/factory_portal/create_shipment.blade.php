@@ -432,6 +432,14 @@
                 @if (session('error'))
                     <div class="alert alert-danger py-2" role="alert">{{ session('error') }}</div>
                 @endif
+                <div class="position-relative mb-3" style="width: 500px; max-width: 100%;">
+                    <label for="shipment-history-search" class="visually-hidden">Search shipment number, delivery number, invoice number or date</label>
+                    <input type="search" id="shipment-history-search"
+                           class="form-control rounded-pill bg-white shadow-sm border-0 pe-5 py-3"
+                           placeholder="Search shipments..." aria-controls="shipment-history-content">
+                    <i class="bi bi-search position-absolute top-50 end-0 translate-middle-y text-muted me-3"
+                       style="pointer-events: none;" aria-hidden="true"></i>
+                </div>
                 <div id="shipment-history-content" aria-live="polite" aria-busy="false"></div>
             </div>
             <div class="modal-footer py-2">
@@ -451,6 +459,30 @@
     const historyModal = document.getElementById('shipment-history-modal');
     const historyContent = document.getElementById('shipment-history-content');
     const historyRefresh = document.getElementById('refresh-shipment-history');
+    const historySearch = document.getElementById('shipment-history-search');
+
+    // Match the shipment number, delivery number, invoice number or date shown in each summary.
+    function filterShipmentHistory() {
+        const searchText = historySearch.value.trim().toLowerCase();
+        const shipments = historyContent.querySelectorAll('.history-shipment');
+        let visibleCount = 0;
+
+        for (const shipment of shipments) {
+            const summaryText = shipment.querySelector('summary').textContent.toLowerCase();
+
+            if (summaryText.includes(searchText)) {
+                shipment.classList.remove('d-none');
+                visibleCount++;
+            } else {
+                shipment.classList.add('d-none');
+            }
+        }
+
+        const noResults = document.getElementById('shipment-history-no-results');
+        if (noResults) {
+            noResults.hidden = visibleCount > 0;
+        }
+    }
 
     async function loadShipmentHistory() {
         historyContent.textContent = 'Loading shipment history...';
@@ -465,6 +497,7 @@
                 throw new Error('Unable to load shipment history.');
             }
             historyContent.innerHTML = await response.text();
+            filterShipmentHistory();
         } catch (error) {
             historyContent.textContent = 'Unable to load shipment history. Click Refresh to try again.';
         } finally {
@@ -475,6 +508,7 @@
 
     historyModal.addEventListener('show.bs.modal', loadShipmentHistory);
     historyRefresh.addEventListener('click', loadShipmentHistory);
+    historySearch.addEventListener('input', filterShipmentHistory);
     @if (request('history') === '1')
         document.addEventListener('DOMContentLoaded', function () {
             new bootstrap.Modal(historyModal).show();

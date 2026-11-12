@@ -88,6 +88,17 @@
                 </div>
             </div>
             @endif
+
+            @if($user->forwarder)
+            <div class="row border-bottom pb-3">
+                <div class="col-sm-4 text-uppercase fw-bolder text-muted d-flex align-items-center" style="font-size: 11px; letter-spacing: 1px;">
+                    <i class="bi bi-truck me-2 fs-5"></i> Forwarder
+                </div>
+                <div class="col-sm-8 fw-bold text-dark fs-6 mt-1 mt-sm-0">
+                    {{ $user->forwarder->company_name }}
+                </div>
+            </div>
+            @endif
             
             <div class="row border-bottom pb-3">
                 <div class="col-sm-4 text-uppercase fw-bolder text-muted d-flex align-items-center" style="font-size: 11px; letter-spacing: 1px;">

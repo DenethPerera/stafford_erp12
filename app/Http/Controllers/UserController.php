@@ -19,7 +19,7 @@ class UserController extends Controller
 
     public function index()
     {
-        $users = User::with(['roles', 'lab', 'branch', 'factory'])->get();
+        $users = User::with(['roles', 'lab', 'branch', 'factory', 'forwarder'])->get();
         return view('users.index', compact('users'));
     }
 
@@ -71,7 +71,7 @@ class UserController extends Controller
     // Display the specified resource.
     public function show(User $user)
     {
-        $user->load(['roles', 'lab', 'branch', 'factory']);
+        $user->load(['roles', 'lab', 'branch', 'factory', 'forwarder']);
         return view('users.show', compact('user'));
     }
 

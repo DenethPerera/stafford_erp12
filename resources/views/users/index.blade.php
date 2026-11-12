@@ -60,6 +60,10 @@
                                 <span class="badge bg-info bg-opacity-10 text-info rounded-pill px-2 py-1 small fw-semibold ms-1" title="Assigned Lab">
                                    {{ $user->lab->name }}
                                 </span>
+                            @elseif($user->forwarder)
+                                <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-1 small fw-semibold ms-1" title="Assigned Forwarder">
+                                    {{ $user->forwarder->company_name }}
+                                </span>
                             @endif
                         </td>
                         <td class="py-3 px-4">

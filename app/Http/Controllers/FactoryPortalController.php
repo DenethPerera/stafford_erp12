@@ -492,6 +492,24 @@ class FactoryPortalController extends Controller
         return view('factory_portal.shipment_details', compact('shipmentRows', 'shipmentSearch'));
     }
 
+    public function importExport(Request $request)
+    {
+        $factoryId = $request->user()->mbranchlist_id;
+        abort_unless($factoryId, 403, 'Your account is not linked to a factory.');
+
+        // Use the same assigned purchase orders as the Create Shipment page.
+        $purchaseOrderIds = DB::table('shipment_order_factories')
+            ->where('factory_id', $factoryId)
+            ->pluck('purchase_order_id');
+
+        $purchaseOrders = DB::connection('erav')->table('porder_pdf_list')
+            ->whereIn('id', $purchaseOrderIds)
+            ->orderBy('pdf_po_refno')
+            ->pluck('pdf_po_refno', 'id');
+
+        return view('factory_portal.import_export', compact('purchaseOrders'));
+    }
+
     public function createShipment(Request $request)
     {
         return $this->shipmentForm($request);

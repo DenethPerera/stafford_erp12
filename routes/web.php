@@ -132,7 +132,7 @@ Route::delete(
         Route::get('factory-portal', [\App\Http\Controllers\FactoryPortalController::class, 'index'])->name('factory-portal.index');
         Route::post('factory-portal/{id}/store-po', [\App\Http\Controllers\FactoryPortalController::class, 'storePurchaseOrder'])->name('factory-portal.store-po');
 
-        Route::view('import-export', 'factory_portal.import_export')->name('import-export.index');
+        Route::get('import-export', [\App\Http\Controllers\FactoryPortalController::class, 'importExport'])->name('import-export.index');
 
         Route::get('shipment-details',[\App\Http\Controllers\FactoryPortalController::class, 'shipmentDetails'])->name('shipment-details.index');
         Route::get('create-shipment', [\App\Http\Controllers\FactoryPortalController::class, 'createShipment'])->name('create-shipment.index');
