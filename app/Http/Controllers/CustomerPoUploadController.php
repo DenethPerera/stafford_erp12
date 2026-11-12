@@ -83,18 +83,8 @@ class CustomerPoUploadController extends Controller
                     'ftp_file' => 'required|string',
                 ]);
 
-                $customer = DB::connection('erav')
-                    ->table('salescustomerlist')
-                    ->where('isoffline', 0)
-                    ->where(function ($query) {
-                        $query->where('customer_name', 'like', '%Alpha%Broder%')
-                            ->orWhere('customer_ref', 'like', '%AB%');
-                    })
-                    ->first();
-
-                if (!$customer) {
-                    return back()->with('error', 'AlphaBroder customer record was not found or is inactive.')->withInput();
-                }
+                
+                
 
                 $cleanFileName = basename($request->ftp_file);
                 $fullPath = storage_path('app/ab_ftp/inbox/' . $cleanFileName);
@@ -108,7 +98,7 @@ class CustomerPoUploadController extends Controller
                     return back()->with('error', 'FTP file exceeds the 10 MB limit.')->withInput();
                 }
                 $originalFileName = $cleanFileName;
-                $poGroups = $service->parseAbFtp($fullPath, $customer);
+                $poGroups = $service->parseAbFtp($fullPath);
             }
 
             // Generate unique preview token and store parsed payload in session

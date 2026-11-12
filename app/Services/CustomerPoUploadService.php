@@ -247,7 +247,7 @@ class CustomerPoUploadService
     /**
      * Parse the 37-column Alpha Broder FTP CSV. Rows are grouped by PO number (col 0).
      */
-    public function parseAbFtp(string $filePath, object $customer): array
+    public function parseAbFtp(string $filePath, ?object $customer = null): array
     {
         $handle = fopen($filePath, 'r');
         if (!$handle) {
@@ -273,6 +273,7 @@ class CustomerPoUploadService
 
             $poGroups = [];
             $rowNum   = 1;
+            $customerCache = [];
 
             while (($row = fgetcsv($handle, 0, ',', '"', '\\')) !== false) {
                 $rowNum++;
@@ -292,6 +293,29 @@ class CustomerPoUploadService
                 $poNumber = trim((string) ($row[0] ?? ''));
                 if ($poNumber === '') {
                     continue;
+                }
+
+                $rowCustomer = $this->resolveAbCustomer(
+                    (string) $row[8],
+                    $rowNum,
+                    $customerCache
+                );
+
+                // Compare supplies a selected customer: never compare another account.
+                if ($customer !== null
+                    && (int) $customer->customer_id !== (int) $rowCustomer->customer_id) {
+                    throw ValidationException::withMessages([
+                        'ftp_file' => "Row {$rowNum}: PO {$poNumber} belongs to "
+                            . $rowCustomer->customer_ref
+                            . ', which differs from the selected customer.',
+                    ]);
+                }
+
+                if (isset($poGroups[$poNumber])
+                    && (int) $poGroups[$poNumber]['customer_id'] !== (int) $rowCustomer->customer_id) {
+                    throw ValidationException::withMessages([
+                        'ftp_file' => "Row {$rowNum}: PO {$poNumber} contains conflicting customer accounts.",
+                    ]);
                 }
 
                 $style   = trim((string) ($row[20] ?? ''));
@@ -315,11 +339,11 @@ class CustomerPoUploadService
                     $poGroups[$poNumber] = [
                         'po_number'     => $poNumber,
                         'order_date'    => $orderDate ?: now()->format('Y-m-d'),
-                        'customer_id'   => $customer->customer_id,
-                        'customer_ref'  => $customer->customer_ref ?? '',
-                        'customer_name' => $customer->customer_name ?? '',
-                        'customer_addr' => $customer->customer_addr ?? '',
-                        'delivery_addr' => $destinationName ?: ($customer->customer_addr ?? ''),
+                        'customer_id'   => $rowCustomer->customer_id,
+                        'customer_ref'  => $rowCustomer->customer_ref ?? '',
+                        'customer_name' => $rowCustomer->customer_name ?? '',
+                        'customer_addr' => $rowCustomer->customer_addr ?? '',
+                        'delivery_addr' => $destinationName ?: ($rowCustomer->customer_addr ?? ''),
                         'ship_date'     => $shipDate,
                         'indc_date'     => $indcDate,
                         'ship_term'     => $incoterms,
@@ -359,6 +383,48 @@ class CustomerPoUploadService
             fclose($handle);
         }
     }
+    protected function resolveAbCustomer(
+    string $vendor,
+    int $rowNum,
+    array &$cache
+): object {
+    // Use only after this business mapping is confirmed.
+    $referenceByVendor = [
+        '6734'  => 'AB-US',
+        '51049' => 'AB-CND',
+    ];
+
+    // Treat 06734 and 6734 as the same numeric vendor code.
+    $vendorKey = ltrim(trim($vendor), '0');
+    $reference = $referenceByVendor[$vendorKey] ?? null;
+
+    if ($reference === null) {
+        throw ValidationException::withMessages([
+            'ftp_file' =>
+                "Row {$rowNum}: Unknown AlphaBroder vendor '{$vendor}'.",
+        ]);
+    }
+
+    if (!isset($cache[$reference])) {
+        $matches = DB::connection(self::CONN)
+            ->table('salescustomerlist')
+            ->where('customer_ref', $reference)
+            ->where('isoffline', 0)
+            ->limit(2)
+            ->get();
+
+        if ($matches->count() !== 1) {
+            throw ValidationException::withMessages([
+                'ftp_file' =>
+                    "Row {$rowNum}: Expected one active customer for {$reference}.",
+            ]);
+        }
+
+        $cache[$reference] = $matches->first();
+    }
+
+    return $cache[$reference];
+}
 
 
     /**
