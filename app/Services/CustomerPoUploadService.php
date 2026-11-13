@@ -56,192 +56,237 @@ class CustomerPoUploadService
     }
 
     /**
-     * Row 1: Org name
-     * Row 2: PO No:, 10102020
-     * Row 3: Order Date:, 2024-11-10
-     * Row 4: Customer No., LV-1
-     * Row 6: SeqNo, StyleCode, StyleDescription, ColorCode, ColorName, Size, Qty, Cost
+     * Sample layout: header metadata followed by a named item table.
      */
     protected function parseSampleLayoutNonFtp(array $rows, object $customer): array
     {
-        $poCell0  = trim((string) ($rows[1][0] ?? ''));
-        $poCell1  = trim((string) ($rows[1][1] ?? ''));
-        $poNumber = trim(str_ireplace(['PO No:', 'PO No.', 'PO No'], '', $poCell1 !== '' ? $poCell1 : $poCell0));
-
-        $dateCell0 = trim((string) ($rows[2][0] ?? ''));
-        $dateCell1 = trim((string) ($rows[2][1] ?? ''));
-        $rawDate   = trim(str_ireplace(['Order Date:', 'Order Date'], '', $dateCell1 !== '' ? $dateCell1 : $dateCell0));
-        $poDate    = $this->normalizeDate($rawDate);
-
-        $custCell0  = trim((string) ($rows[3][0] ?? ''));
-        $custCell1  = trim((string) ($rows[3][1] ?? ''));
-        $customerNo = trim(str_ireplace(['Customer No.', 'Customer No:', 'Customer No'], '', $custCell1 !== '' ? $custCell1 : $custCell0));
-
-        if ($poNumber === '') {
-            throw ValidationException::withMessages(['csv_file' => 'PO number could not be detected from row 2 of the file.']);
+        $poCell = trim((string) ($rows[1][1] ?? ''));
+        $dateCell = trim((string) ($rows[2][1] ?? ''));
+        $customerNo = trim((string) ($rows[3][1] ?? ''));
+        if ($poCell === '') {
+            $poCell = preg_replace('/^PO\s*No[.:]?\s*/i', '', trim((string) ($rows[1][0] ?? '')));
         }
+        if ($dateCell === '') {
+            $dateCell = preg_replace('/^Order\s*Date[.:]?\s*/i', '', trim((string) ($rows[2][0] ?? '')));
+        }
+        if ($customerNo === '') {
+            $customerNo = preg_replace('/^Customer\s*No[.:]?\s*/i', '', trim((string) ($rows[3][0] ?? '')));
+        }
+        if ($poCell === '') {
+            $this->nonFtpError(2, 'PO number is required.');
+        }
+        $expectedRef = trim((string) ($customer->customer_ref ?? ''));
+        if ($customerNo === '' || $expectedRef === '') {
+            $this->nonFtpError(4, 'Customer No. is required, and the selected customer must have a reference.');
+        }
+        if (mb_strtolower(trim($customerNo)) !== mb_strtolower($expectedRef)) {
+            $this->nonFtpError(4, 'File Customer No. does not match the selected customer reference.');
+        }
+        $this->validateNonFtpLengths(['po_number' => $poCell, 'vendor' => $customerNo], 2);
+        $defaults = [
+            'po_number' => $poCell,
+            'order_date' => $this->nonFtpDate($dateCell, 3),
+            // Customer No must match customer_ref. Preserve the existing
+            // supplier/account field mapping; no database schema change.
+            'customer_no' => $customerNo,
+        ];
+        [$headerIndex, $map] = $this->findNonFtpHeader($rows, 4);
+        return $this->parseNonFtpItems($rows, $headerIndex, $map, $customer, $defaults);
+    }
 
-        // locate the item table header
-        $itemHeaderIndex = -1;
-        $limit = min(15, count($rows));
-        for ($i = 4; $i < $limit; $i++) {
-            $cells = array_filter(array_map(fn($v) => trim((string) $v), $rows[$i]));
-            $headerLine = strtoupper(implode(',', $cells));
-            if (str_contains($headerLine, 'STYLE') && (str_contains($headerLine, 'QTY') || str_contains($headerLine, 'COST'))) {
-                $itemHeaderIndex = $i;
-                break;
+    protected function parseTabularNonFtp(array $rows, object $customer): array
+    {
+        [$headerIndex, $map] = $this->findNonFtpHeader($rows);
+        foreach (['po_number' => 'PO number', 'order_date' => 'Order date', 'customer_ref' => 'Customer Ref'] as $field => $label) {
+            if (!isset($map[$field])) {
+                $this->nonFtpError($headerIndex + 1, "{$label} column is required.");
             }
         }
-        if ($itemHeaderIndex === -1) {
-            $itemHeaderIndex = 5;
-        }
-
-        $items = [];
-        $seq   = 1;
-        for ($i = $itemHeaderIndex + 1; $i < count($rows); $i++) {
-            $row = $rows[$i];
-            if ($this->isEmptyRow($row)) {
-                continue;
-            }
-
-            $style = trim((string) ($row[1] ?? ''));
-            if ($style === '') {
-                continue;
-            }
-
-            $rawQty  = str_replace(',', '', trim((string) ($row[6] ?? '0')));
-            $rawCost = str_replace([',', '$'], '', trim((string) ($row[7] ?? '0')));
-
-            if (!preg_match('/^[0-9]+$/D', $rawQty) || (float) $rawQty < 1 || (float) $rawQty > 2147483647) {
-                throw ValidationException::withMessages(['csv_file' => 'Row ' . ($i + 1) . ': Quantity must be a valid positive number.']);
-            }
-            if (!preg_match('/^[0-9]+(?:\.[0-9]{1,4})?$/D', $rawCost) || !is_finite((float) $rawCost)) {
-                throw ValidationException::withMessages(['csv_file' => 'Row ' . ($i + 1) . ': Cost must be zero or a positive decimal.']);
-            }
-
-            $qty       = (int) $rawQty;
-            $unitPrice = round((float) $rawCost, 4);
-
-            $items[] = [
-                'seq_no'      => (int) (($row[0] ?? '') !== '' ? $row[0] : $seq),
-                'style'       => $style,
-                'description' => trim((string) ($row[2] ?? '')) ?: $style,
-                'color_code'  => trim((string) ($row[3] ?? '')) ?: '-',
-                'color_name'  => trim((string) ($row[4] ?? '')),
-                'size'        => trim((string) ($row[5] ?? '')),
-                'upc'         => null,
-                'qty'         => $qty,
-                'unit_price'  => $unitPrice,
-                'line_total'  => round($qty * $unitPrice, 2),
-            ];
-            $seq++;
-        }
-
-        if (empty($items)) {
-            throw ValidationException::withMessages(['csv_file' => 'No line items could be detected in the file.']);
-        }
-
-        return [$this->finalizeGroup([
-            'po_number'     => $poNumber,
-            'order_date'    => $poDate,
-            'customer_id'   => $customer->customer_id,
-            'customer_ref'  => $customer->customer_ref ?? '',
-            'customer_name' => $customer->customer_name ?? '',
-            'customer_addr' => $customer->customer_addr ?? '',
-            'delivery_addr' => $customer->customer_addr ?? '',
-            'season'        => '',
-            'vendor'        => $customerNo,
-            'items'         => $items,
-        ])];
+        return $this->parseNonFtpItems($rows, $headerIndex, $map, $customer);
     }
 
     /**
-     * Flat tabular Non-FTP file (headings in the first 15 rows).
+     * Scan named headers without guessing a fixed row or fixed column order.
      */
-    protected function parseTabularNonFtp(array $rows, object $customer): array
+    protected function findNonFtpHeader(array $rows, int $start = 0): array
     {
-        $headerIndex = -1;
-        $columnMap   = [];
-
-        foreach (array_slice($rows, 0, 15, true) as $idx => $row) {
-            $map = $this->mapHeadings($row);
-            if (isset($map['style'], $map['qty'], $map['cost'])) {
-                $headerIndex = $idx;
-                $columnMap   = $map;
-                break;
+        foreach ($rows as $index => $row) {
+            if ($index < $start || $this->isEmptyRow($row)) {
+                continue;
             }
+            $map = $this->mapHeadings($row);
+            foreach ($row as $column => $label) {
+                $clean = trim(preg_replace('/[^a-z0-9]+/', '_', strtolower(trim((string) $label))), '_');
+                if (in_array($clean, ['customer_id', 'customer_ref', 'customer_reference'], true)) {
+                    $map[$clean === 'customer_id' ? 'customer_id' : 'customer_ref'] = $column;
+                }
+            }
+            if (!isset($map['style'], $map['qty'], $map['cost'])) {
+                continue;
+            }
+            // Reject duplicate recognised headings, including alias collisions.
+            $seen = [];
+            foreach ($row as $label) {
+                $single = $this->mapHeadings([$label]);
+                $clean = trim(preg_replace('/[^a-z0-9]+/', '_', strtolower(trim((string) $label))), '_');
+                if (in_array($clean, ['customer_id', 'customer_ref', 'customer_reference'], true)) {
+                    $single = [$clean === 'customer_id' ? 'customer_id' : 'customer_ref' => 0];
+                }
+                foreach (array_keys($single) as $field) {
+                    if (isset($seen[$field])) {
+                        $this->nonFtpError($index + 1, "Duplicate/ambiguous heading for {$field}.");
+                    }
+                    $seen[$field] = true;
+                }
+            }
+            return [$index, $map];
         }
+        throw ValidationException::withMessages([
+            'csv_file' => 'Could not find an item header containing Style, Qty and Cost. No fixed-row fallback was used.',
+        ]);
+    }
 
-        if ($headerIndex === -1) {
-            throw ValidationException::withMessages(['csv_file' => 'Could not detect required columns (Style, Qty, Cost) in the file.']);
-        }
-
-        $poGroups  = [];
-        $defaultPo = 'PO-' . now()->format('YmdHis');
-
+    protected function parseNonFtpItems(
+        array $rows,
+        int $headerIndex,
+        array $map,
+        object $customer,
+        array $defaults = []
+    ): array {
+        $groups = [];
+        $seenItems = [];
+        $seenSequences = [];
+        $headerWidth = count($rows[$headerIndex]);
         for ($i = $headerIndex + 1; $i < count($rows); $i++) {
             $row = $rows[$i];
+            $rowNum = $i + 1;
             if ($this->isEmptyRow($row)) {
                 continue;
             }
+            if (!$this->isEmptyRow(array_slice($row, $headerWidth))) {
+                $this->nonFtpError($rowNum, 'Unexpected data beyond the header columns. Check CSV quoting.');
+            }
+            $get = fn($key) => isset($map[$key])
+                ? trim((string) ($row[$map[$key]] ?? ''))
+                : (string) ($defaults[$key] ?? '');
 
-            $get = fn($key) => isset($columnMap[$key]) ? trim((string) ($row[$columnMap[$key]] ?? '')) : null;
-
+            foreach (['customer_id', 'customer_ref', 'customer_name'] as $field) {
+                if (isset($map[$field])) {
+                    $actual = $get($field);
+                    $expected = trim((string) ($customer->$field ?? ''));
+                    if ($actual === '' || $expected === ''
+                        || mb_strtolower($actual) !== mb_strtolower($expected)) {
+                        $this->nonFtpError($rowNum, "{$field} does not match the selected customer.");
+                    }
+                }
+            }
+            $poNumber = $get('po_number');
             $style = $get('style');
-            if (empty($style)) {
-                continue;
+            if ($poNumber === '' || $style === '') {
+                $this->nonFtpError($rowNum, 'PO number and Style are required. No item rows were skipped.');
             }
-
-            $poNumber = $get('po_number') ?: $defaultPo;
-            $rawQty   = str_replace(',', '', (string) ($get('qty') ?? '0'));
-            $rawCost  = str_replace([',', '$'], '', (string) ($get('cost') ?? '0'));
-
-            if (!preg_match('/^[0-9]+$/D', $rawQty) || (float) $rawQty < 1 || (float) $rawQty > 2147483647) {
-                throw ValidationException::withMessages(['csv_file' => 'Row ' . ($i + 1) . ': Quantity must be a valid positive integer.']);
+            $qtyValue = $this->normalizeAbNumber($get('qty'));
+            $costValue = $this->normalizeAbNumber($get('cost'), true);
+            if ($qtyValue === null || (float) $qtyValue < 1 || (float) $qtyValue > 2147483647) {
+                $this->nonFtpError($rowNum, 'Quantity must be a positive whole number; use commas only in groups of three.');
             }
-            if (!preg_match('/^[0-9]+(?:\.[0-9]{1,4})?$/D', $rawCost) || !is_finite((float) $rawCost)) {
-                throw ValidationException::withMessages(['csv_file' => 'Row ' . ($i + 1) . ': Unit cost must be a non-negative number.']);
+            if ($costValue === null || !is_finite((float) $costValue)) {
+                $this->nonFtpError($rowNum, 'Cost must use a decimal dot, valid thousands groups and at most four decimal places.');
             }
-
-            $qty       = (int) $rawQty;
-            $unitPrice = round((float) $rawCost, 4);
-
-            if (!isset($poGroups[$poNumber])) {
-                $rawDate = $get('order_date');
-                $poGroups[$poNumber] = [
-                    'po_number'     => $poNumber,
-                    'order_date'    => $this->normalizeDate($rawDate),
-                    'customer_id'   => $customer->customer_id,
-                    'customer_ref'  => $customer->customer_ref ?? '',
-                    'customer_name' => $customer->customer_name ?? '',
-                    'customer_addr' => $customer->customer_addr ?? '',
-                    'delivery_addr' => $get('delivery_addr') ?: ($customer->customer_addr ?? ''),
-                    'season'        => $get('season') ?: '',
-                    'vendor'        => $get('customer_no') ?: '',
-                    'items'         => [],
-                ];
-            }
-
-            $seq = count($poGroups[$poNumber]['items']) + 1;
-            $poGroups[$poNumber]['items'][] = [
-                'seq_no'      => (int) ($get('seq_no') ?: $seq),
-                'style'       => $style,
-                'description' => $get('description') ?: $style,
-                'color_code'  => $get('color_code') ?: '-',
-                'color_name'  => $get('color_name') ?: '',
-                'size'        => $get('size') ?: '',
-                'upc'         => $get('upc') ?: null,
-                'qty'         => $qty,
-                'unit_price'  => $unitPrice,
-                'line_total'  => round($qty * $unitPrice, 2),
+            $header = [
+                'po_number' => $poNumber,
+                'order_date' => $this->nonFtpDate($get('order_date'), $rowNum),
+                'customer_id' => $customer->customer_id,
+                'customer_ref' => $customer->customer_ref ?? '',
+                'customer_name' => $customer->customer_name ?? '',
+                'customer_addr' => $customer->customer_addr ?? '',
+                'delivery_addr' => $get('delivery_addr') !== '' ? $get('delivery_addr') : ($customer->customer_addr ?? ''),
+                'season' => $get('season'),
+                'vendor' => $get('customer_no'),
             ];
+            $item = [
+                'style' => $style,
+                'description' => $get('description') !== '' ? $get('description') : $style,
+                'color_code' => $get('color_code') !== '' ? $get('color_code') : '-',
+                'color_name' => $get('color_name'),
+                'size' => $get('size'),
+                'upc' => $get('upc') !== '' ? $get('upc') : null,
+                'qty' => (int) $qtyValue,
+                'unit_price' => round((float) $costValue, 4),
+            ];
+            $item['line_total'] = round($item['qty'] * $item['unit_price'], 2);
+            if (!is_finite($item['line_total'])) {
+                $this->nonFtpError($rowNum, 'Line total is outside the supported numeric range.');
+            }
+            $this->validateNonFtpLengths(array_merge($header, $item), $rowNum);
+            $groupKey = $customer->customer_id . ':' . $poNumber;
+            if (isset($groups[$groupKey])) {
+                foreach (['order_date', 'delivery_addr', 'season', 'vendor'] as $field) {
+                    if ($groups[$groupKey][$field] !== $header[$field]) {
+                        $this->nonFtpError($rowNum, "PO {$poNumber} has conflicting {$field} values.");
+                    }
+                }
+            }
+            $explicitSeq = $get('seq_no');
+            if ($explicitSeq !== ''
+                && (!preg_match('/^[0-9]+$/D', $explicitSeq)
+                    || (float) $explicitSeq < 1 || (float) $explicitSeq > 2147483647)) {
+                $this->nonFtpError($rowNum, 'Sequence number must be a positive integer.');
+            }
+            $seq = $explicitSeq !== '' ? (int) $explicitSeq : count($groups[$groupKey]['items'] ?? []) + 1;
+            if (isset($seenSequences[$groupKey][$seq])) {
+                $this->nonFtpError($rowNum, "Duplicate sequence {$seq} in PO {$poNumber}.");
+            }
+            // Explicit distinct line numbers can represent intentional repeated
+            // products. Without them, identical business rows require review.
+            $identity = $item;
+            if ($explicitSeq !== '') {
+                $identity['seq_no'] = $seq;
+            }
+            $fingerprint = serialize($identity);
+            if (isset($seenItems[$groupKey][$fingerprint])) {
+                $first = $seenItems[$groupKey][$fingerprint];
+                $this->nonFtpError($rowNum, "Duplicate item in PO {$poNumber} (first seen at row {$first}). Use distinct SeqNo values for intentional separate lines.");
+            }
+            $seenItems[$groupKey][$fingerprint] = $rowNum;
+            $seenSequences[$groupKey][$seq] = true;
+            $groups[$groupKey] ??= $header + ['items' => []];
+            $item = ['seq_no' => $seq] + $item;
+            $groups[$groupKey]['items'][] = $item;
         }
-
-        if (empty($poGroups)) {
-            throw ValidationException::withMessages(['csv_file' => 'No valid line item rows found in the file.']);
+        if (!$groups) {
+            throw ValidationException::withMessages(['csv_file' => 'No line item data found.']);
         }
+        // All rows are validated before duplicate DB lookups or preview results.
+        return array_values(array_map(fn($g) => $this->finalizeGroup($g), $groups));
+    }
 
-        return array_values(array_map(fn($g) => $this->finalizeGroup($g), $poGroups));
+    protected function validateNonFtpLengths(array $values, int $rowNum): void
+    {
+        // STL- + PO must fit the existing 25-character confirmation reference.
+        $limits = ['po_number' => 21, 'style' => 50, 'description' => 200,
+            'color_code' => 50, 'color_name' => 100, 'size' => 50, 'upc' => 50,
+            'customer_name' => 50, 'customer_addr' => 200, 'delivery_addr' => 200,
+            'season' => 50, 'vendor' => 15];
+        foreach ($limits as $field => $limit) {
+            if (isset($values[$field]) && mb_strlen((string) $values[$field]) > $limit) {
+                $this->nonFtpError($rowNum, "{$field} exceeds {$limit} characters; shorten it before import.");
+            }
+        }
+    }
+
+    protected function nonFtpDate(string $value, int $rowNum): string
+    {
+        try {
+            return $this->normalizeDate($value);
+        } catch (ValidationException $e) {
+            $this->nonFtpError($rowNum, 'Order date is missing or invalid.');
+        }
+    }
+
+    protected function nonFtpError(int $rowNum, string $message): never
+    {
+        throw ValidationException::withMessages(['csv_file' => "Row {$rowNum}: {$message}"]);
     }
 
     /**
@@ -311,21 +356,16 @@ class CustomerPoUploadService
                     ]);
                 }
 
-                if (isset($poGroups[$poNumber])
-                    && (int) $poGroups[$poNumber]['customer_id'] !== (int) $rowCustomer->customer_id) {
-                    throw ValidationException::withMessages([
-                        'ftp_file' => "Row {$rowNum}: PO {$poNumber} contains conflicting customer accounts.",
-                    ]);
-                }
+                $groupKey = $rowCustomer->customer_id . ':' . $poNumber;
 
                 $style   = trim((string) ($row[20] ?? ''));
-                $rawQty  = str_replace(',', '', trim((string) ($row[28] ?? '0')));
-                $rawCost = str_replace([',', '$'], '', trim((string) ($row[32] ?? '0')));
+                $rawQty  = $this->normalizeAbNumber((string) $row[28]);
+                $rawCost = $this->normalizeAbNumber((string) $row[32], true);
 
                 $qty       = (int) $rawQty;
                 $unitPrice = round((float) $rawCost, 4);
 
-                if (!isset($poGroups[$poNumber])) {
+                if (!isset($poGroups[$groupKey])) {
                     $orderDate = $dates[2];
                     $shipDate  = $dates[4];
                     $indcDate  = $dates[5];
@@ -336,7 +376,7 @@ class CustomerPoUploadService
                     $carrier         = trim((string) ($row[17] ?? ''));
                     $season          = trim((string) ($row[21] ?? ''));
 
-                    $poGroups[$poNumber] = [
+                    $poGroups[$groupKey] = [
                         'po_number'     => $poNumber,
                         'order_date'    => $orderDate ?: now()->format('Y-m-d'),
                         'customer_id'   => $rowCustomer->customer_id,
@@ -355,9 +395,9 @@ class CustomerPoUploadService
                     ];
                 }
 
-                $seq = count($poGroups[$poNumber]['items']) + 1;
+                $seq = count($poGroups[$groupKey]['items']) + 1;
 
-                $poGroups[$poNumber]['items'][] = [
+                $poGroups[$groupKey]['items'][] = [
                     'seq_no'      => $seq,
                     'style'       => $style,
                     'description' => trim((string) ($row[22] ?? '')) ?: $style,
@@ -368,8 +408,8 @@ class CustomerPoUploadService
                     'qty'         => $qty,
                     'unit_price'  => $unitPrice,
                     'line_total'  => round($qty * $unitPrice, 2),
-                    'master_pack' => (int) str_replace(',', '', trim((string) ($row[30] ?? '0'))),
-                    'case_pack'   => (int) str_replace(',', '', trim((string) ($row[31] ?? '0'))),
+                    'master_pack' => (int) $this->normalizeAbNumber((string) $row[30]),
+                    'case_pack'   => (int) $this->normalizeAbNumber((string) $row[31]),
                 ];
             }
 
@@ -474,6 +514,27 @@ class CustomerPoUploadService
      * Check schema anchors, including unused fields, to avoid accepting a shifted
      * row merely because its quantity happens to be numeric.
      */
+
+    /**
+     * AB exports use a decimal dot and optional groups of three thousands digits.
+     * Return null for malformed values; never guess a decimal-comma conversion.
+     */
+    protected function normalizeAbNumber(string $value, bool $decimal = false): ?string
+    {
+        $value = trim($value);
+        // Preserve support for a single leading dollar sign on cost fields.
+        if ($decimal && str_starts_with($value, '$')) {
+            $value = substr($value, 1);
+        }
+        $integer = '(?:[0-9]+|[1-9][0-9]{0,2}(?:,[0-9]{3})+)';
+        $pattern = '/^' . $integer . ($decimal ? '(?:\.[0-9]{1,4})?' : '') . '$/D';
+        if (!preg_match($pattern, $value)) {
+            return null;
+        }
+
+        return str_replace(',', '', $value);
+    }
+
     protected function abFtpRowError(array $row, bool $repair = false): ?string
     {
         if (count($row) !== 37) {
@@ -502,20 +563,22 @@ class CustomerPoUploadService
             }
         }
         foreach ([6, 7, 27, 28, 29, 30, 31] as $i) {
-            $v = str_replace(',', '', $value($i));
+            $v = $value($i);
             if ($v === '' && $i !== 28) {
                 continue;
             }
-            if (!preg_match('/^[0-9]+$/D', $v) || (float) $v > 2147483647 || ($i === 28 && (float) $v < 1)) {
+            $v = $this->normalizeAbNumber($v);
+            if ($v === null || (float) $v > 2147483647 || ($i === 28 && (float) $v < 1)) {
                 return 'Column ' . ($i + 1) . ' must contain a valid whole-number quantity.';
             }
         }
         foreach ([32, 34] as $i) {
-            $v = str_replace([',', '$'], '', $value($i));
+            $v = $value($i);
             if ($v === '' && $i === 34 && !$repair) {
                 continue;
             }
-            if (!preg_match('/^[0-9]+(?:\.[0-9]{1,4})?$/D', $v) || !is_finite((float) $v)) {
+            $v = $this->normalizeAbNumber($v, true);
+            if ($v === null || !is_finite((float) $v)) {
                 return 'Column ' . ($i + 1) . ' must contain a non-negative cost with up to four decimal places.';
             }
         }

@@ -3,20 +3,7 @@
 @section('header', 'Customer PO Upload')
 
 @section('content')
-@if(session('success'))
-    <div class="alert alert-success">{{ session('success') }}</div>
-@endif
-@if(session('error'))
-    <div class="alert alert-danger">{{ session('error') }}</div>
-@endif
-@if($errors->any())
-    <div class="alert alert-danger mb-3">
-        @foreach($errors->all() as $err)
-            <div>{{ $err }}</div>
-        @endforeach
-    </div>
-@endif
-
+{{-- Flash and validation messages are rendered once by layouts.app. --}}
 @php $abMode = old('upload_type') === 'AB_FTP'; @endphp
 
 <div class="card shadow-sm border-0 mb-4">
@@ -135,6 +122,20 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    // Only this upload page opts into auto-dismiss for layout notifications.
+    document.querySelectorAll('.content-area > .alert').forEach(function (alert) {
+        var dismissTimer = setTimeout(function () { alert.remove(); }, 8000);
+        var closeButton = alert.querySelector('.btn-close');
+        if (closeButton) {
+            closeButton.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                clearTimeout(dismissTimer);
+                alert.remove();
+            });
+        }
+    });
+
     var non = document.getElementById('toggleNonFtp');
     function sw() {
         document.getElementById('sectionNonFtp').classList.toggle('d-none', !non.checked);

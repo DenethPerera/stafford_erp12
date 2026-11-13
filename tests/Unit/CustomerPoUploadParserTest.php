@@ -26,6 +26,21 @@ class CustomerPoUploadParserTest extends TestCase
         $container->instance('validator', new Factory(new Translator(new ArrayLoader, 'en'), $container));
         Facade::setFacadeApplication($container);
         $this->service = new class extends CustomerPoUploadService {
+            // Fixture customers keep parser tests independent of the real database.
+            protected function resolveAbCustomer(string $vendor, int $rowNum, array &$cache): object
+            {
+                $key = ltrim(trim($vendor), '0');
+                if (!in_array($key, ['6734', '51049'], true)) {
+                    throw ValidationException::withMessages(['ftp_file' => "Row {$rowNum}: Unknown vendor."]);
+                }
+                return $cache[$key] ??= (object) [
+                    'customer_id' => $key === '6734' ? 1 : 5,
+                    'customer_ref' => $key === '6734' ? 'AB-US' : 'AB-CND',
+                    'customer_name' => $key === '6734' ? 'AlphaBroder US' : 'AlphaBroder Canada',
+                    'customer_addr' => 'Fixture address',
+                ];
+            }
+
             protected function findDuplicateId(string $poNumber, int $customerId): ?int
             {
                 return $poNumber === 'EXISTING' ? 99 : null;
@@ -44,7 +59,7 @@ class CustomerPoUploadParserTest extends TestCase
         parent::tearDown();
     }
 
-    private function parse(array $rows, ?array $header = null): array
+    private function parse(array $rows, ?array $header = null, ?object $customer = null): array
     {
         $handle = fopen($this->path, 'w');
         fputcsv($handle, $header ?? $this->header);
@@ -52,9 +67,7 @@ class CustomerPoUploadParserTest extends TestCase
             fputcsv($handle, $row);
         }
         fclose($handle);
-        return $this->service->parseAbFtp($this->path, (object) [
-            'customer_id' => 1, 'customer_name' => 'AlphaBroder',
-        ]);
+        return $this->service->parseAbFtp($this->path, $customer);
     }
 
     public function test_groups_items_and_preserves_upc_leading_zeroes(): void
@@ -193,10 +206,10 @@ class CustomerPoUploadParserTest extends TestCase
     public function test_non_ftp_tabular_workflow_is_unchanged(): void
     {
         $h = fopen($this->path, 'w');
-        fputcsv($h, ['PO', 'Order Date', 'Style', 'Qty', 'Cost', 'Size']);
-        fputcsv($h, ['NON-FTP', '2026-07-23', 'STYLE1', '10', '2.5000', 'L']);
+        fputcsv($h, ['PO', 'Order Date', 'Style', 'Qty', 'Cost', 'Size', 'Customer Ref']);
+        fputcsv($h, ['NON-FTP', '2026-07-23', 'STYLE1', '10', '2.5000', 'L', 'AB']);
         fclose($h);
-        $groups = $this->service->parseNonFtp($this->path, (object) ['customer_id' => 1]);
+        $groups = $this->service->parseNonFtp($this->path, (object) ['customer_id' => 1, 'customer_ref' => 'AB']);
         self::assertSame('NON-FTP', $groups[0]['po_number']);
         self::assertSame(10, $groups[0]['total_pcs']);
         self::assertSame(25.0, $groups[0]['total_val']);
@@ -213,9 +226,101 @@ class CustomerPoUploadParserTest extends TestCase
             fputcsv($h, $row);
         }
         fclose($h);
-        $groups = $this->service->parseNonFtp($this->path, (object) ['customer_id' => 1]);
+        $groups = $this->service->parseNonFtp($this->path, (object) ['customer_id' => 1, 'customer_ref' => 'AB']);
         self::assertSame('SAMPLE-PO', $groups[0]['po_number']);
         self::assertSame(25.0, $groups[0]['total_val']);
+    }
+
+    public function test_mixed_accounts_assign_customer_per_po(): void
+    {
+        $canada = $this->row;
+        $canada[0] = 'CANADA-PO';
+        $canada[8] = '51049';
+        $groups = $this->parse([$this->row, $canada]);
+        self::assertSame(1, $groups[0]['customer_id']);
+        self::assertSame('AB-US', $groups[0]['customer_ref']);
+        self::assertSame(5, $groups[1]['customer_id']);
+        self::assertSame('AB-CND', $groups[1]['customer_ref']);
+    }
+
+    public function test_selected_customer_mismatch_is_rejected(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->parse([$this->row], null, (object) ['customer_id' => 5]);
+    }
+
+    public function test_same_po_number_is_grouped_separately_per_customer(): void
+    {
+        $canada = $this->row;
+        $canada[8] = '51049';
+        $canada[28] = '20';
+        $groups = $this->parse([$this->row, $canada, $this->row]);
+        self::assertCount(2, $groups);
+        self::assertSame($groups[0]['po_number'], $groups[1]['po_number']);
+        self::assertSame(1, $groups[0]['customer_id']);
+        self::assertSame(5, $groups[1]['customer_id']);
+        self::assertCount(2, $groups[0]['items']);
+        self::assertCount(1, $groups[1]['items']);
+        self::assertSame(72, $groups[0]['total_pcs']);
+        self::assertSame(20, $groups[1]['total_pcs']);
+        self::assertSame(337.68, $groups[0]['total_val']);
+        self::assertSame(93.8, $groups[1]['total_val']);
+        self::assertSame([1, 2], array_column($groups[0]['items'], 'seq_no'));
+        self::assertSame([1], array_column($groups[1]['items'], 'seq_no'));
+    }
+
+    public function test_accepts_valid_grouped_numbers_without_changing_values(): void
+    {
+        $this->row[28] = '1,000';
+        $this->row[32] = '1,000.5000';
+        $this->row[30] = '1,200';
+        $this->row[31] = '1,000';
+        $group = $this->parse([$this->row])[0];
+        self::assertSame(1000, $group['items'][0]['qty']);
+        self::assertSame(1000.5, $group['items'][0]['unit_price']);
+        self::assertSame(1200, $group['items'][0]['master_pack']);
+        self::assertSame(1000, $group['items'][0]['case_pack']);
+        self::assertSame(1000500.0, $group['total_val']);
+    }
+
+    public function test_accepts_plain_and_dollar_prefixed_costs(): void
+    {
+        foreach (['5.6', '$5.6000', '0', '0.0000'] as $cost) {
+            $this->row[32] = $cost;
+            $item = $this->parse([$this->row])[0]['items'][0];
+            self::assertSame(str_contains($cost, '5') ? 5.6 : 0.0, $item['unit_price']);
+        }
+    }
+
+    public function test_rejects_malformed_numeric_fields_with_row_and_column(): void
+    {
+        $original = $this->row;
+        foreach ([6, 7, 27, 28, 29, 30, 31, 32, 34] as $column) {
+            foreach (['5,6', '1,00', '1,,000', ',100', '100,', '1 000', '-5', '1e3'] as $bad) {
+                $this->row = $original;
+                $this->row[$column] = $bad;
+                try {
+                    $this->parse([$this->row]);
+                    self::fail("Column {$column} accepted {$bad}");
+                } catch (ValidationException $e) {
+                    self::assertStringContainsString('Row 2:', $e->errors()['ftp_file'][0]);
+                    self::assertStringContainsString('Column ' . ($column + 1), $e->errors()['ftp_file'][0]);
+                }
+            }
+        }
+    }
+
+    public function test_rejects_decimal_comma_and_excess_precision_costs(): void
+    {
+        foreach (['1.000,50', '1,00.50', '5.12345', '5.6.7', '5$6', '$$5'] as $bad) {
+            $this->row[32] = $bad;
+            try {
+                $this->parse([$this->row]);
+                self::fail("Accepted invalid cost {$bad}");
+            } catch (ValidationException $e) {
+                self::assertStringContainsString('Column 33', $e->errors()['ftp_file'][0]);
+            }
+        }
     }
 
 }
